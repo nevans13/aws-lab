@@ -1,0 +1,269 @@
+Description: CloudFormation template for creating AWS lab resources
+
+Parameters:
+  KeyPair:
+    Description: Name of the EC2 keypair for SSH to the VMs
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: aws-lab-keypair
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair
+
+  CreateEC2Instances:
+    Description: Create the EC2 compute resources?
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+
+  OpnsenseAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID for OPNsense; Marketplace AMI IDs are account- and region-specific
+
+  AdminCidrForMgmt:
+    Type: String
+    Description: CIDR (including /32) allowed to reach the OPNsense HTTPS and SSH UIs on the WAN interface
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+
+Conditions:
+  CreateEC2Instances: !Equals [ !Ref CreateEC2Instances, true]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/22
+      Tags:
+        - Key: Name
+          Value: aws-lab-vpc
+
+  # Public subnet A
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: us-east-2a
+      Tags:
+        - Key: Name
+          Value: aws-lab-public-subnet-a
+
+  # Public subnet B
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-2b
+      Tags:
+        - Key: Name
+          Value: aws-lab-public-subnet-b
+
+  # Private subnet A
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-2a
+      Tags:
+        - Key: Name
+          Value: aws-lab-private-subnet-a
+
+  # Private subnet B
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: us-east-2b
+      Tags:
+        - Key: Name
+          Value: aws-lab-private-subnet-b
+
+  IGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Application
+          Value: aws-lab-igw
+
+  IGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn:
+      - IGW
+    Properties:
+      InternetGatewayId: !Ref IGW
+      VpcId: !Ref VPC
+
+  # WAN-side route table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: aws-lab-public-rt
+
+  # LAN-side route table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: aws-lab-private-rt
+
+  PublicRouteTableAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicRouteTableAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  PrivateRouteTableAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetA
+
+  PrivateRouteTableAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetB
+
+  # Default route traffic from the OPNsense WAN ENI to the internet
+  RouteToIGW:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - IGWAttachment
+      - PublicRouteTable
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW
+      RouteTableId: !Ref PublicRouteTable
+
+  # Route all traffic from the LAN subnets to the OPNsense LAN ENI
+  RouteToOPNsenseLan:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - LanEni
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NetworkInterfaceId: !Ref LanEni
+
+  # Security Group for OPNsense WAN interface - restrict mgmt access, allow all outbound
+  WanSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: OPNsense WAN interface - restrict mgmt access, allow all outbound
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AdminCidrForMgmt
+          Description: HTTPS web UI from admin CIDR only
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AdminCidrForMgmt
+          Description: SSH web UI from admin CIDR only
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: aws-lab-public-sg
+ 
+  # Security Group for OPNsense LAN interface - allow traffic from internal subnets
+  LanSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: OPNsense LAN interface - allow traffic from internal subnets
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 10.0.2.0/24
+          Description: All traffic from LAN subnet A
+        - IpProtocol: -1
+          CidrIp: 10.0.3.0/24
+          Description: All traffic from LAN subnet B
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: aws-lab-private-sg
+
+  WanEni:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      PrivateIpAddress: 10.0.0.4
+      GroupSet:
+        - !Ref WanSecurityGroup
+      SourceDestCheck: false
+      Description: OPNsense WAN interface
+      Tags:
+        - Key: Name
+          Value: aws-lab-wan-eni
+ 
+  LanEni:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      PrivateIpAddress: 10.0.2.4
+      GroupSet:
+        - !Ref LanSecurityGroup
+      SourceDestCheck: false
+      Description: OPNsense LAN interface
+      Tags:
+        - Key: Name
+          Value: aws-lab-lan-eni
+ 
+  WanEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: aws-lab-wan-eip
+ 
+  WanEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt WanEip.AllocationId
+      NetworkInterfaceId: !Ref WanEni
+
+  OPNsenseInstanceA:
+    Type: AWS::EC2::Instance
+    Condition: CreateEC2Instances
+    Properties:
+      ImageId: !Ref OpnsenseAmiId
+      InstanceType: m4.large
+      KeyName: !Ref KeyPair
+      NetworkInterfaces:
+        - NetworkInterfaceId: !Ref WanEni
+          DeviceIndex: 0
+        - NetworkInterfaceId: !Ref LanEni
+          DeviceIndex: 1
+      Tags:
+        - Key: Name
+          Value: aws-lab-opnsense-a
+
+Outputs:
+  WanPublicIp:
+    Description: Elastic IP address for the OPNsense WAN interface (management/internet-facing)
+    Value: !Ref WanEip
+
+  PuttyCommandOPNsenseA:
+    Description: Output the Putty CLI command to SSH to aws-lab-opnsense-a
+    Condition: CreateEC2Instances
+    Value: !Join [ "", [ "putty ec2-user@", !GetAtt OPNsenseInstanceA.PublicIp , " -i ", !Ref KeyPair, ".ppk" ] ]
