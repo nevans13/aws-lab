@@ -25,3 +25,7 @@ This repository contains code for various lab systems in AWS. Primary networking
 The system is meant to be easily decommissioned using:
 
     aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab
+
+## OPNsense Tasks
+1 - Complete system update (System > Firmware > Status: Check for Updates)
+2 - Install the FRR plugin for dynamic routing (System > Firmware > Plugins: Add *os-frr*)
