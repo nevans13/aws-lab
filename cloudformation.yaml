@@ -1,6 +1,15 @@
 Description: CloudFormation template for creating AWS lab resources
 
 Parameters:
+  OpnsenseAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID for OPNsense; Marketplace AMI IDs are account- and region-specific
+
+  AdminCidrForMgmt:
+    Type: String
+    Description: CIDR (including /32) allowed to reach the OPNsense HTTPS and SSH UIs on the WAN interface
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+
   KeyPair:
     Description: Name of the EC2 keypair for SSH to the VMs
     Type: AWS::EC2::KeyPair::KeyName
@@ -15,23 +24,71 @@ Parameters:
       - true
       - false
 
-  OpnsenseAmiId:
-    Type: AWS::EC2::Image::Id
-    Description: AMI ID for OPNsense; Marketplace AMI IDs are account- and region-specific
-
-  AdminCidrForMgmt:
+  VpcCidr:
     Type: String
-    Description: CIDR (including /32) allowed to reach the OPNsense HTTPS and SSH UIs on the WAN interface
-    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+    Default: ''
+    Description: Optional override for the VPC CIDR block; leave blank to auto-select based on the deployed region
+
+  PublicSubnetCidr:
+    Type: String
+    Default: ''
+    Description: Optional override for the VPC CIDR block; leave blank to auto-select based on the deployed region
+
+  PrivateSubnetCidr:
+    Type: String
+    Default: ''
+    Description: Optional override for the VPC CIDR block; leave blank to auto-select based on the deployed region
+
+  WanPrivateIp:
+    Type: String
+    Default: ''
+    Description: Optional override for the VPC CIDR block; leave blank to auto-select based on the deployed region
+
+  LanPrivateIp:
+    Type: String
+    Default: ''
+    Description: Optional override for the VPC CIDR block; leave blank to auto-select based on the deployed region
+
+Mappings:
+  RegionNetworkDefaults:
+    us-east-1:
+      VpcCidr: 10.0.0.0/22
+      PublicSubnetCidr: 10.0.0.0/24
+      PrivateSubnetCidr: 10.0.2.0/24
+      WanPrivateIp: 10.0.0.4
+      LanPrivateIp: 10.0.2.4
+    us-east-2:
+      VpcCidr: 10.0.4.0/22
+      PublicSubnetCidr: 10.0.4.0/24
+      PrivateSubnetCidr: 10.0.6.0/24
+      WanPrivateIp: 10.0.4.4
+      LanPrivateIp: 10.0.6.4
+    us-west-1:
+      VpcCidr: 10.0.8.0/22
+      PublicSubnetCidr: 10.0.8.0/24
+      PrivateSubnetCidr: 10.0.10.0/24
+      WanPrivateIp: 10.0.8.4
+      LanPrivateIp: 10.0.10.4
+    us-west-2:
+      VpcCidr: 10.0.12.0/22
+      PublicSubnetCidr: 10.0.12.0/24
+      PrivateSubnetCidr: 10.0.14.0/24
+      WanPrivateIp: 10.0.12.4
+      LanPrivateIp: 10.0.14.4
 
 Conditions:
   CreateEC2Instances: !Equals [ !Ref CreateEC2Instances, true]
+  HasVpcCidrOverride: !Not [!Equals [!Ref VpcCidr, '']]
+  HasPublicSubnetCidrOverride: !Not [!Equals [!Ref PublicSubnetCidr, '']]
+  HasPrivateSubnetCidrOverride: !Not [!Equals [!Ref PrivateSubnetCidr, '']]
+  HasWanIpOverride: !Not [!Equals [!Ref WanPrivateIp, '']]
+  HasLanIpOverride: !Not [!Equals [!Ref LanPrivateIp, '']]
 
 Resources:
   VPC:
     Type: AWS::EC2::VPC
     Properties:
-      CidrBlock: 10.0.0.0/22
+      CidrBlock: !If [HasVpcCidrOverride, !Ref VpcCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', VpcCidr]]
       Tags:
         - Key: Name
           Value: aws-lab-vpc
@@ -41,44 +98,22 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.0.0/24
-      AvailabilityZone: us-east-2a
+      CidrBlock: !If [HasPublicSubnetCidrOverride, !Ref PublicSubnetCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', PublicSubnetCidr]]
+      AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
           Value: aws-lab-public-subnet-a
-
-  # Public subnet B
-  PublicSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.1.0/24
-      AvailabilityZone: us-east-2b
-      Tags:
-        - Key: Name
-          Value: aws-lab-public-subnet-b
 
   # Private subnet A
   PrivateSubnetA:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      CidrBlock: 10.0.2.0/24
-      AvailabilityZone: us-east-2a
+      CidrBlock: !If [HasPrivateSubnetCidrOverride, !Ref PrivateSubnetCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', PrivateSubnetCidr]]
+      AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
           Value: aws-lab-private-subnet-a
-
-  # Private subnet B
-  PrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC
-      CidrBlock: 10.0.3.0/24
-      AvailabilityZone: us-east-2b
-      Tags:
-        - Key: Name
-          Value: aws-lab-private-subnet-b
 
   IGW:
     Type: AWS::EC2::InternetGateway
@@ -119,23 +154,11 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetA
 
-  PublicRouteTableAssociationB:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnetB
-
   PrivateRouteTableAssociationA:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       SubnetId: !Ref PrivateSubnetA
-
-  PrivateRouteTableAssociationB:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      SubnetId: !Ref PrivateSubnetB
 
   # Default route traffic from the OPNsense WAN ENI to the internet
   RouteToIGW:
@@ -190,11 +213,8 @@ Resources:
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: -1
-          CidrIp: 10.0.2.0/24
+          CidrIp: !If [HasPrivateSubnetCidrOverride, !Ref PrivateSubnetCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', PrivateSubnetCidr]]
           Description: All traffic from LAN subnet A
-        - IpProtocol: -1
-          CidrIp: 10.0.3.0/24
-          Description: All traffic from LAN subnet B
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -206,7 +226,7 @@ Resources:
     Type: AWS::EC2::NetworkInterface
     Properties:
       SubnetId: !Ref PublicSubnetA
-      PrivateIpAddress: 10.0.0.4
+      PrivateIpAddress: !If [HasWanIpOverride, !Ref WanPrivateIp, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', WanPrivateIp]]
       GroupSet:
         - !Ref WanSecurityGroup
       SourceDestCheck: false
@@ -219,7 +239,7 @@ Resources:
     Type: AWS::EC2::NetworkInterface
     Properties:
       SubnetId: !Ref PrivateSubnetA
-      PrivateIpAddress: 10.0.2.4
+      PrivateIpAddress: !If [HasLanIpOverride, !Ref LanPrivateIp, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', LanPrivateIp]]
       GroupSet:
         - !Ref LanSecurityGroup
       SourceDestCheck: false
