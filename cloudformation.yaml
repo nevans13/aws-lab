@@ -5,6 +5,11 @@ Parameters:
     Type: AWS::EC2::Image::Id
     Description: AMI ID for OPNsense; Marketplace AMI IDs are account- and region-specific
 
+  AmazonLinuxAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Amazon Linux AMI for the private-subnet test instance, resolved via the public SSM parameter at deploy time — always the current AMI for whichever region this stack lands in, no per-region ID needed.
+
   AdminCidrForMgmt:
     Type: String
     Description: CIDR (including /32) allowed to reach the OPNsense HTTPS and SSH UIs on the WAN interface
@@ -222,6 +227,29 @@ Resources:
         - Key: Name
           Value: aws-lab-private-sg
 
+  LinuxInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Amazon Linux test instance - SSH and ICMP from within the LAN subnet only, no direct internet exposure
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !If [HasPrivateSubnetCidrOverride, !Ref PrivateSubnetCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', PrivateSubnetCidr]]
+          Description: SSH from LAN subnet
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !If [HasPrivateSubnetCidrOverride, !Ref PrivateSubnetCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', PrivateSubnetCidr]]
+          Description: Ping from LAN subnet
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: aws-lab-linux-sg
+
   WanEni:
     Type: AWS::EC2::NetworkInterface
     Properties:
@@ -277,6 +305,19 @@ Resources:
       Tags:
         - Key: Name
           Value: aws-lab-opnsense-a
+
+  LinuxInstanceA:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAmiId
+      InstanceType: t3.micro
+      KeyName: !Ref KeyPair
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroupIds:
+        - !Ref LinuxInstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: aws-lab-linux-a
 
 Outputs:
   WanPublicIp:
