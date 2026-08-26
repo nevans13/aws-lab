@@ -57,24 +57,28 @@ Parameters:
 Mappings:
   RegionNetworkDefaults:
     us-east-1:
+      KeyPair: aws-lab-keypair-us-east-1
       VpcCidr: 10.0.0.0/22
       PublicSubnetCidr: 10.0.0.0/24
       PrivateSubnetCidr: 10.0.2.0/24
       WanPrivateIp: 10.0.0.4
       LanPrivateIp: 10.0.2.4
     us-east-2:
+      KeyPair: aws-lab-keypair-us-east-2
       VpcCidr: 10.0.4.0/22
       PublicSubnetCidr: 10.0.4.0/24
       PrivateSubnetCidr: 10.0.6.0/24
       WanPrivateIp: 10.0.4.4
       LanPrivateIp: 10.0.6.4
     us-west-1:
+      KeyPair: aws-lab-keypair-us-west-1
       VpcCidr: 10.0.8.0/22
       PublicSubnetCidr: 10.0.8.0/24
       PrivateSubnetCidr: 10.0.10.0/24
       WanPrivateIp: 10.0.8.4
       LanPrivateIp: 10.0.10.4
     us-west-2:
+      KeyPair: aws-lab-keypair-us-west-2
       VpcCidr: 10.0.12.0/22
       PublicSubnetCidr: 10.0.12.0/24
       PrivateSubnetCidr: 10.0.14.0/24
