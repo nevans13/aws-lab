@@ -32,6 +32,10 @@ The system is meant to be easily decommissioned using:
     aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab
     aws cloudformation delete-stack --region us-west-1 --stack-name aws-lab
 
+## CloudFormation Conditions
+The cloudformation.yaml conditions are structured that they can be enabled modularly, and billable resources are only created if one or more conditions are enabled
+- *CreateOpnsenseInstances:* create the OPNsense firewalls and associated VPC/EC2 resources
+
 ## OPNsense Tasks
 1 - Complete system update (System > Firmware > Status: Check for Updates)
 2 - Install the FRR plugin for dynamic routing (System > Firmware > Plugins: Add *os-frr*)
