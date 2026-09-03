@@ -21,8 +21,8 @@ Parameters:
     Default: aws-lab-keypair
     ConstraintDescription: Must be the name of an existing EC2 KeyPair
 
-  CreateEC2Instances:
-    Description: Create the EC2 compute resources?
+  CreateOpnsenseInstances:
+    Description: Create the OPNsense EC2 compute resources?
     Type: String
     Default: true
     AllowedValues:
@@ -86,7 +86,7 @@ Mappings:
       LanPrivateIp: 10.0.14.4
 
 Conditions:
-  CreateEC2Instances: !Equals [ !Ref CreateEC2Instances, true]
+  CreateOpnsenseInstances: !Equals [ !Ref CreateOpnsenseInstances, true]
   HasVpcCidrOverride: !Not [!Equals [!Ref VpcCidr, '']]
   HasPublicSubnetCidrOverride: !Not [!Equals [!Ref PublicSubnetCidr, '']]
   HasPrivateSubnetCidrOverride: !Not [!Equals [!Ref PrivateSubnetCidr, '']]
@@ -256,6 +256,7 @@ Resources:
 
   WanEni:
     Type: AWS::EC2::NetworkInterface
+    Condition: CreateOpnsenseInstances
     Properties:
       SubnetId: !Ref PublicSubnetA
       PrivateIpAddress: !If [HasWanIpOverride, !Ref WanPrivateIp, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', WanPrivateIp]]
@@ -269,6 +270,7 @@ Resources:
  
   LanEni:
     Type: AWS::EC2::NetworkInterface
+    Condition: CreateOpnsenseInstances
     Properties:
       SubnetId: !Ref PrivateSubnetA
       PrivateIpAddress: !If [HasLanIpOverride, !Ref LanPrivateIp, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', LanPrivateIp]]
@@ -282,6 +284,7 @@ Resources:
  
   WanEip:
     Type: AWS::EC2::EIP
+    Condition: CreateOpnsenseInstances
     Properties:
       Domain: vpc
       Tags:
@@ -290,13 +293,16 @@ Resources:
  
   WanEipAssociation:
     Type: AWS::EC2::EIPAssociation
+    Condition: CreateOpnsenseInstances
+    DependsOn:
+      - WanEip
     Properties:
       AllocationId: !GetAtt WanEip.AllocationId
       NetworkInterfaceId: !Ref WanEni
 
   OPNsenseInstanceA:
     Type: AWS::EC2::Instance
-    Condition: CreateEC2Instances
+    Condition: CreateOpnsenseInstances
     Properties:
       ImageId: !Ref OpnsenseAmiId
       InstanceType: m4.large
@@ -330,5 +336,5 @@ Outputs:
 
   PuttyCommandOPNsenseA:
     Description: Output the Putty CLI command to SSH to aws-lab-opnsense-a
-    Condition: CreateEC2Instances
+    Condition: CreateOpnsenseInstances
     Value: !Join [ "", [ "putty ec2-user@", !GetAtt OPNsenseInstanceA.PublicIp , " -i ", !Ref KeyPair, ".ppk" ] ]
