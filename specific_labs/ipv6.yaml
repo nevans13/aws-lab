@@ -1,0 +1,29 @@
+Description: CloudFormation template for creating AWS-native IPv6 services
+
+Parameters:
+  Domain:
+    Type: String
+    Description: Domain to use for creating DNS records in this template; for example myrecord.<Domain>
+
+Resources:
+  # A VPC must have an associated IPv4 CIDR block; IPv6 blocks are associated with the AWS::EC2::VPCCidrBlock resource
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/23
+      Tags:
+        - Key: Name
+          Value: aws-lab-ipv6-vpc
+
+  # Add an IPv6 CIDR to the VPC, allocated dynamically from AWS
+  # Amazon does not charge for public IPv6 addresses
+  IPv6Block:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      AmazonProvidedIpv6CidrBlock: true
+      VpcId: !Ref VPC
+
+Outputs:
+  Ipv6CidrBlock:
+    Description: IPv6 CIDR block
+    Value: !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks ]
