@@ -4,6 +4,7 @@ Parameters:
   Domain:
     Type: String
     Description: Domain to use for creating DNS records in this template; for example myrecord.<Domain>
+    Default: lab.local
 
 Resources:
   # A VPC must have an associated IPv4 CIDR block; IPv6 blocks are associated with the AWS::EC2::VPCCidrBlock resource
