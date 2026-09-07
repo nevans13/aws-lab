@@ -1,10 +1,38 @@
+################
+### Overview ###
+################
+
+# This Cloudformation template creates IPv6-native resources in AWS.
+# It includes a multi-region deployment in order to demonstrate geographic routing of resource requests.
+
+
+
+#############
+### Usage ###
+#############
+
+# git clone https://github.com/nevans13/aws-lab
+# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-ipv6 --template-body file://aws-lab/specific_labs/ipv6.yaml
+# aws cloudformation create-stack --region us-west-1 --stack-name aws-lab-ipv6 --template-body file://aws-lab/specific_labs/ipv6.yaml
+# aws cloudformation wait stack-create-complete --stack-name aws-lab-ipv6 --region us-west-1
+# aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-east-2
+# aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-west-1
+
+
+
+#####################
+### Template Body ###
+#####################
+
+AWSTemplateFormatVersion: 2010-09-09
+
 Description: CloudFormation template for creating AWS-native IPv6 services
 
 Parameters:
   Domain:
     Type: String
     Description: Domain to use for creating DNS records in this template; for example myrecord.<Domain>
-    Default: lab.local
+    Default: aws-lab.local
 
 Resources:
   # A VPC must have an associated IPv4 CIDR block; IPv6 blocks are associated with the AWS::EC2::VPCCidrBlock resource
@@ -23,6 +51,26 @@ Resources:
     Properties:
       AmazonProvidedIpv6CidrBlock: true
       VpcId: !Ref VPC
+
+  # Public subnet in availability zone A
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Ipv6Native: true
+      Ipv6CidrBlock: !Select [ 0, !Cidr [ !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks], 2, 64 ]]
+      AssignIpv6AddressOnCreation: true
+
+  # Public subnet in availability zone B
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Ipv6Native: true
+      Ipv6CidrBlock: !Select [ 1, !Cidr [ !Select [ 0, !GetAtt VPC.Ipv6CidrBlocks], 2, 64 ]]
+      AssignIpv6AddressOnCreation: true
 
 Outputs:
   Ipv6CidrBlock:
