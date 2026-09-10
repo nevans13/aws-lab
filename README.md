@@ -18,7 +18,7 @@ This repository contains code for various lab systems in AWS. Primary networking
     aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-east-2
 
     AMI_ID_US_WEST_1=$(aws ec2 describe-images --owners aws-marketplace --filters "Name=product-code,Values=1a8db4k5vqv7gye9gt947sk94" --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text --region us-west-1)
-    aws cloudformation create-stack --region us-west-1 --stack-name aws-lab --template-body file://aws-lab/cloudformation.yaml --parameters ParameterKey=OpnsenseAmiId,ParameterValue=$AMI_ID_US_WEST_1     ParameterKey=AdminCidrForMgmt,ParameterValue=<IP>/32
+    aws cloudformation create-stack --region us-west-1 --stack-name aws-lab --template-body file://aws-lab/cloudformation.yaml --parameters ParameterKey=OpnsenseAmiId,ParameterValue=$AMI_ID_US_WEST_1 ParameterKey=AdminCidrForMgmt,ParameterValue=<IP>/32
     aws cloudformation wait stack-create-complete --stack-name aws-lab --region us-west-1
     aws cloudformation describe-stacks --query "Stacks[*].[StackName,StackStatus]" --output table --region us-west-1
     aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-west-1
