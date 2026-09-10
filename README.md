@@ -6,19 +6,19 @@ This repository contains code for various lab systems in AWS. Primary networking
 
 ## Installation
 ### Prerequisites
-1 - Create an EC2 keypair (default name "aws-lab-keypair")\
+1 - Create an EC2 keypair (default name "aws-lab-keypair", or based on instance-specific commands below, can be "aws-lab-keypair-us-east-2")\
 2 - Subscribe to the OPNsense AMI in AWS Marketplace and determine the AMI ID for the specific region\
 3 - Deploy Cloudformation template in any desired region(s); the following works from CloudShell:
 
     git clone https://github.com/nevans13/aws-lab
     AMI_ID_US_EAST_2=$(aws ec2 describe-images --owners aws-marketplace --filters "Name=product-code,Values=1a8db4k5vqv7gye9gt947sk94" --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text --region us-east-2)
-    aws cloudformation create-stack --region us-east-2 --stack-name aws-lab --template-body file://aws-lab/cloudformation.yaml --parameters ParameterKey=OpnsenseAmiId,ParameterValue=$AMI_ID_US_EAST_2 ParameterKey=AdminCidrForMgmt,ParameterValue=<IP>/32
+    aws cloudformation create-stack --region us-east-2 --stack-name aws-lab --template-body file://aws-lab/cloudformation.yaml --parameters ParameterKey=KeyPair,ParameterValue=aws-lab-keypair-us-east-2 ParameterKey=OpnsenseAmiId,ParameterValue=$AMI_ID_US_EAST_2 ParameterKey=AdminCidrForMgmt,ParameterValue=<IP>/32
     aws cloudformation wait stack-create-complete --stack-name aws-lab --region us-east-2
     aws cloudformation describe-stacks --query "Stacks[*].[StackName,StackStatus]" --output table --region us-east-2
     aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-east-2
 
     AMI_ID_US_WEST_1=$(aws ec2 describe-images --owners aws-marketplace --filters "Name=product-code,Values=1a8db4k5vqv7gye9gt947sk94" --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text --region us-west-1)
-    aws cloudformation create-stack --region us-west-1 --stack-name aws-lab --template-body file://aws-lab/cloudformation.yaml --parameters ParameterKey=OpnsenseAmiId,ParameterValue=$AMI_ID_US_WEST_1 ParameterKey=AdminCidrForMgmt,ParameterValue=<IP>/32
+    aws cloudformation create-stack --region us-west-1 --stack-name aws-lab --template-body file://aws-lab/cloudformation.yaml --parameters ParameterKey=KeyPair,ParameterValue=aws-lab-keypair-us-west-1 ParameterKey=OpnsenseAmiId,ParameterValue=$AMI_ID_US_WEST_1 ParameterKey=AdminCidrForMgmt,ParameterValue=<IP>/32
     aws cloudformation wait stack-create-complete --stack-name aws-lab --region us-west-1
     aws cloudformation describe-stacks --query "Stacks[*].[StackName,StackStatus]" --output table --region us-west-1
     aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-west-1
