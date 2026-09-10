@@ -247,6 +247,11 @@ Resources:
           ToPort: 22
           CidrIp: !If [HasPrivateSubnetCidrOverride, !Ref PrivateSubnetCidr, !FindInMap [RegionNetworkDefaults, !Ref 'AWS::Region', PrivateSubnetCidr]]
           Description: SSH from LAN subnet
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AdminCidrForMgmt
+          Description: SSH from admin CIDR
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
