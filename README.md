@@ -32,6 +32,7 @@ The system is meant to be easily decommissioned using:
 
     aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab
     aws cloudformation delete-stack --region us-west-1 --stack-name aws-lab
+    rm -rf aws-lab
 
 ## CloudFormation Conditions
 The cloudformation.yaml conditions are structured that they can be enabled modularly, and billable resources are only created if one or more conditions are enabled
