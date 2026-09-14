@@ -38,8 +38,8 @@ The system is meant to be easily decommissioned using:
 The cloudformation.yaml conditions are structured that they can be enabled modularly, and billable resources are only created if one or more conditions are enabled
 - *CreateOpnsenseInstances:* create the OPNsense firewalls and associated VPC/EC2 resources
 
-## OPNsense Tasks
+## Recommended OPNsense Initial Configuration Steps
 1 - Complete system update (System > Firmware > Status: Check for Updates)\
 2 - Install the FRR plugin for dynamic routing (System > Firmware > Plugins: Add *os-frr*)\
 3 - Add default route (0.0.0.0/0) out of WAN interface (System > Routes > Configuration > Add)\
-4 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)\
+4 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)
