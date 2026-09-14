@@ -348,3 +348,7 @@ Outputs:
     Description: Output the Putty CLI command to SSH to aws-lab-opnsense-a
     Condition: CreateOpnsenseInstances
     Value: !Join [ "", [ "putty ec2-user@", !GetAtt OPNsenseInstanceA.PublicIp , " -i ", !Ref KeyPair, ".ppk" ] ]
+
+  PuttyCommandLinuxInstanceA:
+    Description: Output the Putty CLI command to SSH to aws-lab-linux-a
+    Value: !Join [ "", [ "putty ec2-user@", !GetAtt OPNsenseInstanceA.PublicIp , " -i ", !Ref KeyPair, ".ppk -P 8910" ] ]
