@@ -190,7 +190,7 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       NetworkInterfaceId: !Ref LanEni
 
-  # Security Group for OPNsense WAN interface - restrict mgmt access, allow all outbound, allow custom SSH inbound DNAT to Linux instance
+  # Security Group for OPNsense WAN interface - restrict mgmt access, allow all outbound, allow custom SSH inbound DNAT to Linux instance, allow WAN services (IPsec)
   WanSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -212,6 +212,22 @@ Resources:
           ToPort: 8910
           CidrIp: !Ref AdminCidrForMgmt
           Description: Custom SSH port access for lab Linux instance
+        - IpProtocol: udp
+          FromPort: 500
+          ToPort: 500
+          CidrIp: 0.0.0.0/0
+          Description: Allow IKE for VPN tunnels
+        - IpProtocol: udp
+          FromPort: 4500
+          ToPort: 4500
+          CidrIp: 0.0.0.0/0
+          Description: Allow IPSec NAT Traversal for VPN tunnels
+        - IpProtocol: 50
+          CidrIp: 0.0.0.0/0
+          Description: Allow ESP for VPN tunnels
+        - IpProtocol: 51
+          CidrIp: 0.0.0.0/0
+          Description: Allow AH for VPN tunnels
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
