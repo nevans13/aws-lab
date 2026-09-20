@@ -43,4 +43,6 @@ The cloudformation.yaml conditions are structured that they can be enabled modul
 2 - Install the FRR plugin for dynamic routing (System > Firmware > Plugins: Add *os-frr*)\
 3 - Add default route (0.0.0.0/0) out of WAN interface (System > Routes > Configuration > Add)\
 4 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)\
-5 - Generate an API key (System > Access > Users)
+5 - Change NAT rules from Automatic generation to Disable generation (Firewall > NAT > Outbound > Mode)\
+6 - Add static SNAT rules (Firewall > NAT > Source)\
+7 - Generate an API key (System > Access > Users)
