@@ -40,9 +40,7 @@ The cloudformation.yaml conditions are structured that they can be enabled modul
 
 ## Recommended OPNsense Initial Configuration Steps
 1 - Complete system update (System > Firmware > Status: Check for Updates)\
-2 - Install the FRR plugin for dynamic routing (System > Firmware > Plugins: Add *os-frr*)\
-3 - Add default route (0.0.0.0/0) out of WAN interface (System > Routes > Configuration > Add)\
-4 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)\
-5 - Change NAT rules from Automatic generation to Disable generation (Firewall > NAT > Outbound > Mode)\
-6 - Add static SNAT rules (Firewall > NAT > Source)\
-7 - Generate an API key (System > Access > Users)
+2 - Add default route (0.0.0.0/0) out of WAN interface (System > Routes > Configuration > Add)\
+3 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)\
+4 - Add static DNAT rules (Firewall > NAT > Destination)\
+5 - Generate an API key (System > Access > Users)
