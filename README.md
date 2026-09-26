@@ -44,3 +44,7 @@ The cloudformation.yaml conditions are structured that they can be enabled modul
 3 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)\
 4 - Add static DNAT rules (Firewall > NAT > Destination)\
 5 - Generate an API key (System > Access > Users)
+
+## Specific Labs
+This repository also contains small, topic-based labs that can be deployed individually.
+- *ipv6:* creates IPv6-native resources in AWS
