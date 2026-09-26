@@ -15,8 +15,8 @@
 # aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-ipv6 --template-body file://aws-lab/specific_labs/ipv6.yaml
 # aws cloudformation create-stack --region us-west-1 --stack-name aws-lab-ipv6 --template-body file://aws-lab/specific_labs/ipv6.yaml
 # aws cloudformation wait stack-create-complete --stack-name aws-lab-ipv6 --region us-west-1
-# aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-east-2
-# aws cloudformation describe-stacks --stack-name aws-lab --query "Stacks[0].Outputs" --output table --region us-west-1
+# aws cloudformation describe-stacks --stack-name aws-lab-ipv6 --query "Stacks[0].Outputs" --output table --region us-east-2
+# aws cloudformation describe-stacks --stack-name aws-lab-ipv6 --query "Stacks[0].Outputs" --output table --region us-west-1
 
 
 
