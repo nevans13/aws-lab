@@ -1,0 +1,84 @@
+################
+### Overview ###
+################
+
+# This Cloudformation template creates the infrastructure for a simple AI chatbot.
+# This application simulates a loan customer of a finance company interacting with their account.
+# This lab entry primarily focuses on the AI aspects of the chatbot, such as Amazon Bedrock, not the frontend code.
+
+# Components:
+# Customer Browser - runs frontend code for both the customer account page and chatbot
+# Amazon Cognito - handles user authentication and JWTs
+# API Gateway - 
+
+
+
+#############
+### Usage ###
+#############
+
+# git clone https://github.com/nevans13/aws-lab
+# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --template-body file://aws-lab/specific_labs/chatbot.yaml
+# aws cloudformation wait stack-create-complete --stack-name aws-lab-chatbot --region us-east-2
+# aws cloudformation describe-stacks --stack-name aws-lab-chatbot --query "Stacks[0].Outputs" --output table --region us-east-2
+
+
+
+#####################
+### Template Body ###
+#####################
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: CloudFormation template for creating infrastructure for a simple AI chatbot
+
+Resources:
+  # Amazon Cognito User Pool
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true # only an administrator can create user accounts
+      DeletionProtection: INACTIVE # if set to ACTIVE, must be deactivated before the user pool can be deleted
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT # use COGNITO_DEFAULT for a limited number of emails, otherwise use DEVELOPER with Amazon SES
+      MfaConfiguration: "OFF" # no MFA
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          PasswordHistorySize: 22
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+        SignInPolicy:
+          AllowedFirstAuthFactors:
+            - EMAIL_OTP
+            - PASSWORD
+      UsernameConfiguration:
+        CaseSensitive: false # usernames are not case sensitive
+      UserPoolAddOns:
+        AdvancedSecurityMode: "OFF" # disable activation of advanced threat protection features
+      UserPoolName: aws-lab-chatbot
+      UserPoolTier: ESSENTIALS # feature plan
+      WebAuthnFactorConfiguration: SINGLE_FACTOR # passkeys are considered a single factor of authentication, not inherently multifactor
+
+  # This API Gateway handles all API functions for this application
+  # API Gateway v2 is used for JWT support and improved performance
+  APIGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      CredentialsArn: null # using resource-based permissions
+      Description: This API Gateway handles all API functions for this application
+      IpAddressType: ipv4 # only IPv4 addresses can invoke the API
+      Name: aws-lab-chatbot
+      ProtocolType: HTTP # use an HTTP API (versus websocket)
+      Target: String
+      Version: v1 # optional version identifier
+
+
+  # This Lambda function handles all 
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
