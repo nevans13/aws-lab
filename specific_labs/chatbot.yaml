@@ -17,10 +17,18 @@
 ### Usage ###
 #############
 
+# Creation:
 # git clone https://github.com/nevans13/aws-lab
-# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --template-body file://aws-lab/specific_labs/chatbot.yaml
+# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --template-body file://aws-lab/specific_labs/chatbot.yaml --capabilities CAPABILITY_IAM
 # aws cloudformation wait stack-create-complete --stack-name aws-lab-chatbot --region us-east-2
 # aws cloudformation describe-stacks --stack-name aws-lab-chatbot --query "Stacks[0].Outputs" --output table --region us-east-2
+
+# Post-CloudFormation steps:
+# 1) Replace the Lambda function's index.js file with the one in this repository, and add the index.html file in the same root directory; redeploy the Lambda
+
+# Cleanup:
+# aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab-chatbot
+# rm -rf aws-lab
 
 
 
@@ -74,11 +82,76 @@ Resources:
       IpAddressType: ipv4 # only IPv4 addresses can invoke the API
       Name: aws-lab-chatbot
       ProtocolType: HTTP # use an HTTP API (versus websocket)
-      Target: String
       Version: v1 # optional version identifier
 
+  # The integration between the API Gateway and the Lambda function
+  APIGatewayIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref APIGateway
+      IntegrationType: AWS_PROXY # this is a a Lambda proxy integration between API Gateway and another AWS service
+      IntegrationUri: !GetAtt LambdaFunction.Arn
+      PayloadFormatVersion: '2.0'
 
-  # This Lambda function handles all 
+  # Stage (deploy) the API; each stage is a named deployment of the API (prod, dev, etc)
+  APIGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref APIGateway
+      StageName: $default # the $default stage is served from the base of the API's URL
+      AutoDeploy: true # API updates to not require an explicit redeployment of the API
+
+  # This is the start of all the API routes on the API Gateway
+  # Primary client frontend route (returns the index.html code)
+  FrontendRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      RouteKey: GET / # return code only for the root path
+      Target: !Sub integrations/${APIGatewayIntegration} # the route target
+
+  # Execution role for the Lambda function
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: # the Trust Policy that defines which entities can assume this role
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole # Security Token Service
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
+
+  # This Lambda function handles all services for this application (frontend, agent communication, etc)
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: aws-lab-chatbot
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Timeout: 5
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({
+            statusCode: 200,
+            headers: { 'Content-Type': 'text/html' },
+            body: '<html><body>PLEASE UPDATE CODE</body></html>'
+          });
+
+  # The AWS::Lambda::Permission resource grants an AWS service or another account permission to use a function
+  FrontendInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*
+
+Outputs:
+  FrontendUrl:
+    Description: Default execute-api URL for the frontend
+    Value: !Sub https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/

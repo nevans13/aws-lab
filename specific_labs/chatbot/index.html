@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: gainsboro;
+        }
+
+        button {
+            padding-left: 6px;
+            padding-right: 6px;
+        }
+
+        div {
+            margin-left: 12%;
+            margin-right: 12%;
+        }
+
+        h1 {
+            padding: 16px;
+        }
+
+        label {
+            padding-left: 16px;
+        }
+    </style>
+
+    <head>
+        <title>My Account</title>
+    </head>
+
+    <body>
+        <div>
+            <h1>My Account</h1>
+
+            <label for="username">Username: </label>
+            <input id="username" name="username" type="text" />
+            <label for="username">Password: </label>
+            <input id="password" name="password" type="password" />
+            <button id="log_in">Log In</button>
+            <button hidden id="log_out">Log Out</button>
+        </div>
+    </body>
+
+    <script>
+        // Submit login
+        document.getElementById("log_in").addEventListener("click", () => {
+            console.log("Attempting log in...");
+            // If login is successful, hide login form and show logout button
+        });
+    </script>
+</html>
