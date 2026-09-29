@@ -5,11 +5,17 @@
 # This Cloudformation template creates the infrastructure for a simple AI chatbot.
 # This application simulates a loan customer of a finance company interacting with their account.
 # This lab entry primarily focuses on the AI aspects of the chatbot, such as Amazon Bedrock, not the frontend code.
+# If deploying in a region other than us-east-2, review code for any instances specifically referencing that region.
 
 # Components:
 # Customer Browser - runs frontend code for both the customer account page and chatbot
 # Amazon Cognito - handles user authentication and JWTs
 # API Gateway - 
+# Lambda - 
+# DynamoDB - 
+
+# User Fields in Cognito: first_name, last_name, email, username, password
+# Account Fields in DynamoDB: oustanding_balance
 
 
 
@@ -23,8 +29,10 @@
 # aws cloudformation wait stack-create-complete --stack-name aws-lab-chatbot --region us-east-2
 # aws cloudformation describe-stacks --stack-name aws-lab-chatbot --query "Stacks[0].Outputs" --output table --region us-east-2
 
-# Post-CloudFormation steps:
+# Post-CloudFormation Steps:
 # 1) Replace the Lambda function's index.js file with the one in this repository, and add the index.html file in the same root directory; redeploy the Lambda
+# 2) Update 'ClientId: "YOUR_APP_CLIENT_ID"' in index.html with the Cognito Client ID
+# 3) Create a sample user in Amazon Cognito
 
 # Cleanup:
 # aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab-chatbot
@@ -90,7 +98,7 @@ Resources:
     Properties:
       ApiId: !Ref APIGateway
       IntegrationType: AWS_PROXY # this is a a Lambda proxy integration between API Gateway and another AWS service
-      IntegrationUri: !GetAtt LambdaFunction.Arn
+      IntegrationUri: !GetAtt FrontendLambdaFunction.Arn
       PayloadFormatVersion: '2.0'
 
   # Stage (deploy) the API; each stage is a named deployment of the API (prod, dev, etc)
@@ -110,8 +118,8 @@ Resources:
       RouteKey: GET / # return code only for the root path
       Target: !Sub integrations/${APIGatewayIntegration} # the route target
 
-  # Execution role for the Lambda function
-  LambdaFunctionRole:
+  # Execution role for the frontend Lambda function
+  FrontendLambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument: # the Trust Policy that defines which entities can assume this role
@@ -124,14 +132,14 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
 
-  # This Lambda function handles all services for this application (frontend, agent communication, etc)
-  LambdaFunction:
+  # This Lambda function handles all frontend services for this application (webpage, API)
+  FrontendLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: aws-lab-chatbot
       Runtime: nodejs20.x
       Handler: index.handler
-      Role: !GetAtt LambdaFunctionRole.Arn
+      Role: !GetAtt FrontendLambdaFunctionRole.Arn
       Timeout: 5
       MemorySize: 128
       Code:
@@ -147,9 +155,27 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref LambdaFunction
+      FunctionName: !Ref FrontendLambdaFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*
+
+  # DynamoDB table for each loan account
+  AccountsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aws-lab-chatbot-accounts
+      BillingMode: PAY_PER_REQUEST # no capacity planning needed for a lab-scale table
+      AttributeDefinitions: # the array of attributes that make up the primary key of the table, in this case just the user ID
+        - AttributeName: userId
+          AttributeType: S # type is String
+      DeletionProtectionEnabled: false # if set to true, must be disabled before the table can be deleted
+      KeySchema: # the array of attributes that make up the primary key of the table, in this case just the user ID
+        - AttributeName: userId
+          KeyType: HASH # User ID is used as a partition key
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      SSESpecification:
+        SSEEnabled: false # server-side encryption is enabled, but with AWS owned keys (rather than admin-controlled AWS managed KMS keys)
 
 Outputs:
   FrontendUrl:

@@ -48,3 +48,4 @@ The cloudformation.yaml conditions are structured that they can be enabled modul
 ## Specific Labs
 This repository also contains small, topic-based labs that can be deployed individually.
 - *ipv6:* creates IPv6-native resources in AWS
+- *chatbot:* creates the infrastructure for a simple AI chatbot

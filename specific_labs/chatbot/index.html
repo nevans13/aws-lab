@@ -38,20 +38,66 @@
         <div>
             <h1>My Account</h1>
 
-            <label for="username">Username: </label>
-            <input id="username" name="username" type="text" />
-            <label for="username">Password: </label>
-            <input id="password" name="password" type="password" />
-            <button id="log_in">Log In</button>
-            <button hidden id="log_out">Log Out</button>
+            <div id="login_form">
+                <label for="username">Username: </label>
+                <input id="username" name="username" type="text" />
+                <label for="username">Password: </label>
+                <input id="password" name="password" type="password" />
+                <button id="log_in">Log In</button>
+                <button hidden id="log_out">Log Out</button>
+            </div>
         </div>
     </body>
 
     <script>
+        // Define login function using Cognito
+        async function login(username, password) {
+            const response = await fetch(
+                "https://cognito-idp.us-east-2.amazonaws.com/",
+                {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-amz-json-1.1",
+                    "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth"
+                },
+                body: JSON.stringify({
+                    AuthFlow: "USER_PASSWORD_AUTH",
+                    ClientId: "YOUR_APP_CLIENT_ID",
+                    AuthParameters: {
+                        USERNAME: username,
+                        PASSWORD: password
+                    }
+                })
+                }
+            );
+
+            const data = await response.json();
+
+            if (!response.ok) {throw new Error(data.message || "Login failed");}
+
+            const idToken = data.AuthenticationResult.IdToken;
+            sessionStorage.setItem("idToken", idToken); // used for API calls, and cleared on logout
+            return idToken;
+        }
+
         // Submit login
-        document.getElementById("log_in").addEventListener("click", () => {
+        document.getElementById("log_in").addEventListener("click", async () => {
             console.log("Attempting log in...");
-            // If login is successful, hide login form and show logout button
+
+            // Get credentials from the webpage form
+            const username = document.getElementById("username").value;
+            const password = document.getElementById("password").value;
+
+            try {
+                await login(username, password);
+
+                // If login is successful, hide login form and show logout button
+                document.getElementById("login_form").setAttribute("hidden");
+                document.getElementById("log_out").removeAttribute("hidden");
+            } catch (err) {
+                console.error("Login failed:", err);
+                alert("Login failed: " + err.message);
+            } 
         });
     </script>
 </html>
