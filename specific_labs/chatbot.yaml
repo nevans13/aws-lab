@@ -85,7 +85,6 @@ Resources:
   APIGateway:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      CredentialsArn: null # using resource-based permissions
       Description: This API Gateway handles all API functions for this application
       IpAddressType: ipv4 # only IPv4 addresses can invoke the API
       Name: aws-lab-chatbot
@@ -115,8 +114,16 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref APIGateway
-      RouteKey: GET / # return code only for the root path
+      RouteKey: GET / # return index HTML code only for the root path
       Target: !Sub integrations/${APIGatewayIntegration} # the route target
+
+  # Route to get account balance
+  AccountBalanceRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      RouteKey: GET /api/v1/balance
+      Target: !Sub integrations/${APIGatewayIntegration}
 
   # Execution role for the frontend Lambda function
   FrontendLambdaFunctionRole:
