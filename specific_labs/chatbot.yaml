@@ -80,6 +80,25 @@ Resources:
       UserPoolTier: ESSENTIALS # feature plan
       WebAuthnFactorConfiguration: SINGLE_FACTOR # passkeys are considered a single factor of authentication, not inherently multifactor
 
+  # The User Pool App Client represents the web application's interaction with the Cognito user pool
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AccessTokenValidity: 60
+      ClientName: aws-lab-chatbot-frontend
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH # targeted by the browser's InitiateAuth call in the client JS
+        - ALLOW_REFRESH_TOKEN_AUTH # authentication flow for token refreshes
+      GenerateSecret: false # browser clients are nto meant to keep a secret
+      IdTokenValidity: 60
+      PreventUserExistenceErrors: ENABLED # if user doesn't exist, Cognito responds with an invalid username/password error rather than a user does not exist error
+      RefreshTokenValidity: 1
+      TokenValidityUnits: # the units of time that AccessTokenValidity, IdTokenValidity, and RefreshTokenValidity enforce
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      UserPoolId: !Ref CognitoUserPool
+
   # This API Gateway handles all API functions for this application
   # API Gateway v2 is used for JWT support and improved performance
   APIGateway:
@@ -91,6 +110,20 @@ Resources:
       ProtocolType: HTTP # use an HTTP API (versus websocket)
       Version: v1 # optional version identifier
 
+  # The Authorizer checks authorization for specific routes; configured here to authorize based on JSON web tokens
+  Authorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref APIGateway
+      Name: aws-lab-chatbot-cognito-jwt
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - !Ref CognitoUserPoolClient
+        Issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}
+
   # The integration between the API Gateway and the Lambda function
   APIGatewayIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -98,7 +131,7 @@ Resources:
       ApiId: !Ref APIGateway
       IntegrationType: AWS_PROXY # this is a a Lambda proxy integration between API Gateway and another AWS service
       IntegrationUri: !GetAtt FrontendLambdaFunction.Arn
-      PayloadFormatVersion: '2.0'
+      PayloadFormatVersion: "2.0"
 
   # Stage (deploy) the API; each stage is a named deployment of the API (prod, dev, etc)
   APIGatewayStage:
@@ -117,11 +150,13 @@ Resources:
       RouteKey: GET / # return index HTML code only for the root path
       Target: !Sub integrations/${APIGatewayIntegration} # the route target
 
-  # Route to get account balance
+  # Route to get account balance; checks the JWT
   AccountBalanceRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref APIGateway
+      AuthorizerId: !Ref JwtAuthorizer
+      AuthorizationType: JWT
       RouteKey: GET /api/v1/balance
       Target: !Sub integrations/${APIGatewayIntegration}
 
@@ -153,8 +188,8 @@ Resources:
         ZipFile: |
           exports.handler = async () => ({
             statusCode: 200,
-            headers: { 'Content-Type': 'text/html' },
-            body: '<html><body>PLEASE UPDATE CODE</body></html>'
+            headers: { "Content-Type": "text/html" },
+            body: "<html><body>PLEASE UPDATE CODE</body></html>"
           });
 
   # The AWS::Lambda::Permission resource grants an AWS service or another account permission to use a function
@@ -182,9 +217,13 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: false
       SSESpecification:
-        SSEEnabled: false # server-side encryption is enabled, but with AWS owned keys (rather than admin-controlled AWS managed KMS keys)
+        SSEEnabled: false # server-side encryption is always enabled at rest, but with AWS owned keys (rather than admin-controlled AWS managed KMS keys)
 
 Outputs:
   FrontendUrl:
     Description: Default execute-api URL for the frontend
     Value: !Sub https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/
+
+  CognitoClientId:
+    Description: the Cognito User Pool App Client ID; paste into ClientId in index.html
+    Value: !Ref CognitoUserPoolClient

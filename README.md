@@ -1,5 +1,6 @@
 # aws-lab
-CloudFormation templates and related code for AWS lab environment
+CloudFormation templates and related code for AWS lab environment\
+**Note:** all code is meant for testing in a lab environment and should not be used as a security or production-ready reference
 
 ## Overview
 This repository contains code for various lab systems in AWS. Primary networking is provided by OPNsense.
