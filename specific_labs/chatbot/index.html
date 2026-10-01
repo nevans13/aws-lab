@@ -55,7 +55,7 @@
             <div id="login_form">
                 <label for="username">Username: </label>
                 <input id="username" name="username" type="text" />
-                <label for="username">Password: </label>
+                <label for="password">Password: </label>
                 <input id="password" name="password" type="password" />
                 <button id="log_in">Log In</button>
             </div>
@@ -67,96 +67,99 @@
                 <button class="chatbot" id="chatbot">C</button>
             </div>
         </div>
-    </body>
 
-    <script>
-        // Define login function using Cognito
-        async function login(username, password) {
-            const response = await fetch(
-                "https://cognito-idp.us-east-2.amazonaws.com/",
-                {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/x-amz-json-1.1",
-                    "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth"
-                },
-                body: JSON.stringify({
-                    AuthFlow: "USER_PASSWORD_AUTH",
-                    ClientId: "YOUR_APP_CLIENT_ID",
-                    AuthParameters: {
-                        USERNAME: username,
-                        PASSWORD: password
+        <script>
+            // Define login function using Cognito
+            async function login(username, password) {
+                const response = await fetch(
+                    "https://cognito-idp.us-east-2.amazonaws.com/",
+                    {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-amz-json-1.1",
+                        "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth"
+                    },
+                    body: JSON.stringify({
+                        AuthFlow: "USER_PASSWORD_AUTH",
+                        ClientId: "YOUR_APP_CLIENT_ID",
+                        AuthParameters: {
+                            USERNAME: username,
+                            PASSWORD: password
+                        }
+                    })
                     }
-                })
-                }
-            );
+                );
 
-            const data = await response.json();
-
-            if (!response.ok) {throw new Error(data.message || "Login failed");}
-
-            const idToken = data.AuthenticationResult.IdToken;
-            sessionStorage.setItem("idToken", idToken); // used for API calls, and cleared on logout
-            return idToken;
-        }
-
-        // Fetch the account balance from the API and display it
-        async function loadBalance() {
-            // Read the Cognito ID token JWT from the browser session's storage
-            const idToken = sessionStorage.getItem("idToken");
-
-            try {
-                // Request the balance from the API
-                const response = await fetch("/api/v1/balance", {
-                    headers: { "Authorization": "Bearer " + idToken }
-                });
-
-                // Handle any errors
-                if (response.status === 401) {
-                    throw new Error("Session expired, please log in again");
-                }
-                if (!response.ok) {
-                    throw new Error("Could not load balance (" + response.status + ")");
-                }
-
-                // Format the balance as a USD and display it
                 const data = await response.json();
-                document.getElementById("balance").innerText = new Intl.NumberFormat("en-US", {
-                    style: "currency",
-                    currency: "USD"
-                }).format(data.balance);
-            } catch (err) {
-                console.error("Balance load failed:", err);
-                document.getElementById("balance").innerText = "Unavailable";
+
+                if (!response.ok) {throw new Error(data.message || "Login failed");}
+
+                const idToken = data.AuthenticationResult.IdToken;
+                sessionStorage.setItem("idToken", idToken); // used for API calls, and cleared on logout
+                return idToken;
             }
-        }
 
-        // Submit login
-        document.getElementById("log_in").addEventListener("click", async () => {
-            console.log("Attempting log in...");
+            // Fetch the account balance from the API and display it
+            async function loadBalance() {
+                // Read the Cognito ID token JWT from the browser session's storage
+                const idToken = sessionStorage.getItem("idToken");
 
-            // Get credentials from the webpage form
-            const username = document.getElementById("username").value;
-            const password = document.getElementById("password").value;
+                try {
+                    // Request the balance from the API
+                    const response = await fetch("/api/v1/balance", {
+                        headers: { "Authorization": "Bearer " + idToken }
+                    });
 
-            try {
-                await login(username, password);
+                    // Handle any errors
+                    if (response.status === 401) {
+                        throw new Error("Session expired, please log in again");
+                    }
+                    if (!response.ok) {
+                        throw new Error("Could not load balance (" + response.status + ")");
+                    }
 
-                // If login is successful, hide login form and show user area (account)
-                document.getElementById("login_form").setAttribute("hidden", "");
-                document.getElementById("user_area").removeAttribute("hidden");
-            } catch (err) {
-                console.error("Login failed:", err);
-                alert("Login failed: " + err.message);
-            } 
-        });
+                    // Format the balance as a USD and display it
+                    const data = await response.json();
+                    document.getElementById("balance").innerText = new Intl.NumberFormat("en-US", {
+                        style: "currency",
+                        currency: "USD"
+                    }).format(data.balance);
+                } catch (err) {
+                    console.error("Balance load failed:", err);
+                    document.getElementById("balance").innerText = "Unavailable";
+                }
+            }
 
-        // Submit logout
-        //document.getElementById("log_out").addEventListener("click", async () => {});
+            // Submit login
+            document.getElementById("log_in").addEventListener("click", async () => {
+                console.log("Attempting log in...");
 
-        // Open chatbot
-        document.getElementById("chatbot").addEventListener("click", async () => {
+                // Get credentials from the webpage form
+                const username = document.getElementById("username").value;
+                const password = document.getElementById("password").value;
 
-        });
-    </script>
+                try {
+                    await login(username, password);
+
+                    // If login is successful, hide login form and show user area (account)
+                    document.getElementById("login_form").setAttribute("hidden", "");
+                    document.getElementById("user_area").removeAttribute("hidden");
+
+                    // Fetch and show the account balance
+                    await loadBalance();
+                } catch (err) {
+                    console.error("Login failed:", err);
+                    alert("Login failed: " + err.message);
+                } 
+            });
+
+            // Submit logout
+            //document.getElementById("log_out").addEventListener("click", async () => {});
+
+            // Open chatbot
+            document.getElementById("chatbot").addEventListener("click", async () => {
+
+            });
+        </script>
+    </body>
 </html>

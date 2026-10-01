@@ -25,14 +25,19 @@
 
 # Creation:
 # git clone https://github.com/nevans13/aws-lab
-# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --template-body file://aws-lab/specific_labs/chatbot.yaml --capabilities CAPABILITY_IAM
+# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --capabilities CAPABILITY_IAM --template-body file://aws-lab/specific_labs/chatbot.yaml
 # aws cloudformation wait stack-create-complete --stack-name aws-lab-chatbot --region us-east-2
 # aws cloudformation describe-stacks --stack-name aws-lab-chatbot --query "Stacks[0].Outputs" --output table --region us-east-2
 
 # Post-CloudFormation Steps:
-# 1) Replace the Lambda function's index.js file with the one in this repository, and add the index.html file in the same root directory; redeploy the Lambda
-# 2) Update 'ClientId: "YOUR_APP_CLIENT_ID"' in index.html with the Cognito Client ID
-# 3) Create a sample user in Amazon Cognito
+# 1) In the AWS console, replace the Lambda function's index.js file with the one in this repository, and add the index.html file in the same root directory
+# 2) Update 'ClientId: "YOUR_APP_CLIENT_ID"' in index.html with the Cognito Client ID; redeploy the Lambda
+# 3) Create a sample user in Amazon Cognito:
+#     aws cognito-idp admin-create-user --region us-east-2 --username testuser --message-action SUPPRESS --user-pool-id <POOL_ID>
+#     aws cognito-idp admin-set-user-password --region us-east-2 --permanent --username testuser --password '<12+ chars, upper/lower/number/symbol>' --user-pool-id <POOL_ID>
+# 4) Create an accounts record for the user with a starting balance; user ID is based on the sub from Cognito:
+#     aws cognito-idp admin-get-user --region us-east-2 --username testuser --query "UserAttributes[?Name=='sub'].Value" --output text --user-pool-id <POOL_ID>
+#     aws dynamodb put-item --region us-east-2 --table-name aws-lab-chatbot-accounts --item '{"userId":{"S":"<SUB>"},"balance":{"N":"1234.56"}}'
 
 # Cleanup:
 # aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab-chatbot
@@ -50,14 +55,13 @@ Description: CloudFormation template for creating infrastructure for a simple AI
 
 Resources:
   # Amazon Cognito User Pool
+  # Without the EmailConfiguration, SignInPolicy, and WebAuthnFactorConfiguration configuration, the user pool defaults to password authentication only
   CognitoUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true # only an administrator can create user accounts
       DeletionProtection: INACTIVE # if set to ACTIVE, must be deactivated before the user pool can be deleted
-      EmailConfiguration:
-        EmailSendingAccount: COGNITO_DEFAULT # use COGNITO_DEFAULT for a limited number of emails, otherwise use DEVELOPER with Amazon SES
       MfaConfiguration: "OFF" # no MFA
       Policies:
         PasswordPolicy:
@@ -68,17 +72,12 @@ Resources:
           RequireSymbols: true
           RequireUppercase: true
           TemporaryPasswordValidityDays: 7
-        SignInPolicy:
-          AllowedFirstAuthFactors:
-            - EMAIL_OTP
-            - PASSWORD
       UsernameConfiguration:
         CaseSensitive: false # usernames are not case sensitive
       UserPoolAddOns:
         AdvancedSecurityMode: "OFF" # disable activation of advanced threat protection features
       UserPoolName: aws-lab-chatbot
       UserPoolTier: ESSENTIALS # feature plan
-      WebAuthnFactorConfiguration: SINGLE_FACTOR # passkeys are considered a single factor of authentication, not inherently multifactor
 
   # The User Pool App Client represents the web application's interaction with the Cognito user pool
   CognitoUserPoolClient:
@@ -89,7 +88,7 @@ Resources:
       ExplicitAuthFlows:
         - ALLOW_USER_PASSWORD_AUTH # targeted by the browser's InitiateAuth call in the client JS
         - ALLOW_REFRESH_TOKEN_AUTH # authentication flow for token refreshes
-      GenerateSecret: false # browser clients are nto meant to keep a secret
+      GenerateSecret: false # browser clients are not meant to keep a secret
       IdTokenValidity: 60
       PreventUserExistenceErrors: ENABLED # if user doesn't exist, Cognito responds with an invalid username/password error rather than a user does not exist error
       RefreshTokenValidity: 1
@@ -129,7 +128,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref APIGateway
-      IntegrationType: AWS_PROXY # this is a a Lambda proxy integration between API Gateway and another AWS service
+      IntegrationType: AWS_PROXY # this is a Lambda proxy integration between API Gateway and another AWS service
       IntegrationUri: !GetAtt FrontendLambdaFunction.Arn
       PayloadFormatVersion: "2.0"
 
@@ -155,7 +154,7 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref APIGateway
-      AuthorizerId: !Ref JwtAuthorizer
+      AuthorizerId: !Ref Authorizer
       AuthorizationType: JWT
       RouteKey: GET /api/v1/balance
       Target: !Sub integrations/${APIGatewayIntegration}
@@ -173,13 +172,24 @@ Resources:
             Action: sts:AssumeRole # Security Token Service
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
+      Policies:
+        - PolicyName: read-own-balance # this policy allows the frontend Lambda function to query the accounts table in DynamoDB
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt AccountsTable.Arn
 
   # This Lambda function handles all frontend services for this application (webpage, API)
   FrontendLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
+      Environment:
+        Variables:
+          ACCOUNTS_TABLE: !Ref AccountsTable # set environment variable for the DynamoDB accounts table
       FunctionName: aws-lab-chatbot
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       Handler: index.handler
       Role: !GetAtt FrontendLambdaFunctionRole.Arn
       Timeout: 5
@@ -223,6 +233,10 @@ Outputs:
   FrontendUrl:
     Description: Default execute-api URL for the frontend
     Value: !Sub https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/
+
+  CognitoPoolId:
+    Description: the Cognito User Pool ID; used for creating a user with the AWS CLI
+    Value: !Ref CognitoUserPool
 
   CognitoClientId:
     Description: the Cognito User Pool App Client ID; paste into ClientId in index.html
