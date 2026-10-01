@@ -15,7 +15,7 @@
 # DynamoDB - 
 
 # User Fields in Cognito: first_name, last_name, email, username, password
-# Account Fields in DynamoDB: oustanding_balance
+# Account Fields in DynamoDB: balance
 
 
 
@@ -208,12 +208,12 @@ Resources:
       TableName: aws-lab-chatbot-accounts
       BillingMode: PAY_PER_REQUEST # no capacity planning needed for a lab-scale table
       AttributeDefinitions: # the array of attributes that make up the primary key of the table, in this case just the user ID
-        - AttributeName: userId
+        - AttributeName: userId # the user ID is the value of sub (subject) from Cognito
           AttributeType: S # type is String
       DeletionProtectionEnabled: false # if set to true, must be disabled before the table can be deleted
       KeySchema: # the array of attributes that make up the primary key of the table, in this case just the user ID
         - AttributeName: userId
-          KeyType: HASH # User ID is used as a partition key
+          KeyType: HASH # user ID is used as a partition key
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: false
       SSESpecification:

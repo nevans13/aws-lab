@@ -63,7 +63,7 @@
             <div hidden id="user_area">
                 <button id="log_out" style="margin-left: 80%;">Log Out</button>
                 <br />
-                <p>Account Balance: ...</p>
+                <p>Account Balance: <span id="balance">Loading...</span></p>
                 <button class="chatbot" id="chatbot">C</button>
             </div>
         </div>
@@ -98,6 +98,37 @@
             const idToken = data.AuthenticationResult.IdToken;
             sessionStorage.setItem("idToken", idToken); // used for API calls, and cleared on logout
             return idToken;
+        }
+
+        // Fetch the account balance from the API and display it
+        async function loadBalance() {
+            // Read the Cognito ID token JWT from the browser session's storage
+            const idToken = sessionStorage.getItem("idToken");
+
+            try {
+                // Request the balance from the API
+                const response = await fetch("/api/v1/balance", {
+                    headers: { "Authorization": "Bearer " + idToken }
+                });
+
+                // Handle any errors
+                if (response.status === 401) {
+                    throw new Error("Session expired, please log in again");
+                }
+                if (!response.ok) {
+                    throw new Error("Could not load balance (" + response.status + ")");
+                }
+
+                // Format the balance as a USD and display it
+                const data = await response.json();
+                document.getElementById("balance").innerText = new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD"
+                }).format(data.balance);
+            } catch (err) {
+                console.error("Balance load failed:", err);
+                document.getElementById("balance").innerText = "Unavailable";
+            }
         }
 
         // Submit login
