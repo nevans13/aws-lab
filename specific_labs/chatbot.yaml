@@ -25,19 +25,7 @@
 
 # Creation:
 # git clone https://github.com/nevans13/aws-lab
-# aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --capabilities CAPABILITY_IAM --template-body file://aws-lab/specific_labs/chatbot.yaml
-# aws cloudformation wait stack-create-complete --stack-name aws-lab-chatbot --region us-east-2
-# aws cloudformation describe-stacks --stack-name aws-lab-chatbot --query "Stacks[0].Outputs" --output table --region us-east-2
-
-# Post-CloudFormation Steps:
-# 1) In the AWS console, replace the Lambda function's index.js file with the one in this repository, and add the index.html file in the same root directory
-# 2) Update 'ClientId: "YOUR_APP_CLIENT_ID"' in index.html with the Cognito Client ID; redeploy the Lambda
-# 3) Create a sample user in Amazon Cognito:
-#     aws cognito-idp admin-create-user --region us-east-2 --username testuser --message-action SUPPRESS --user-pool-id <POOL_ID>
-#     aws cognito-idp admin-set-user-password --region us-east-2 --permanent --username testuser --password '<12+ chars, upper/lower/number/symbol>' --user-pool-id <POOL_ID>
-# 4) Create an accounts record for the user with a starting balance; user ID is based on the sub (a UUID) from Cognito:
-#     aws cognito-idp admin-get-user --region us-east-2 --username testuser --query "UserAttributes[?Name=='sub'].Value" --output text --user-pool-id <POOL_ID>
-#     aws dynamodb put-item --region us-east-2 --table-name aws-lab-chatbot-accounts --item '{"userId":{"S":"<SUB>"},"balance":{"N":"1234.56"}}'
+# bash aws-lab/specific_labs/chatbot/setup.sh
 
 # Cleanup:
 # aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab-chatbot
