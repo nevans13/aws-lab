@@ -35,7 +35,7 @@
 # 3) Create a sample user in Amazon Cognito:
 #     aws cognito-idp admin-create-user --region us-east-2 --username testuser --message-action SUPPRESS --user-pool-id <POOL_ID>
 #     aws cognito-idp admin-set-user-password --region us-east-2 --permanent --username testuser --password '<12+ chars, upper/lower/number/symbol>' --user-pool-id <POOL_ID>
-# 4) Create an accounts record for the user with a starting balance; user ID is based on the sub from Cognito:
+# 4) Create an accounts record for the user with a starting balance; user ID is based on the sub (a UUID) from Cognito:
 #     aws cognito-idp admin-get-user --region us-east-2 --username testuser --query "UserAttributes[?Name=='sub'].Value" --output text --user-pool-id <POOL_ID>
 #     aws dynamodb put-item --region us-east-2 --table-name aws-lab-chatbot-accounts --item '{"userId":{"S":"<SUB>"},"balance":{"N":"1234.56"}}'
 
@@ -235,9 +235,9 @@ Outputs:
     Value: !Sub https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/
 
   CognitoPoolId:
-    Description: the Cognito User Pool ID; used for creating a user with the AWS CLI
+    Description: The Cognito User Pool ID; used for creating a user with the AWS CLI
     Value: !Ref CognitoUserPool
 
   CognitoClientId:
-    Description: the Cognito User Pool App Client ID; paste into ClientId in index.html
+    Description: The Cognito User Pool App Client ID; paste into ClientId in index.html
     Value: !Ref CognitoUserPoolClient
