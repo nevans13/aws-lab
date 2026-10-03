@@ -10,7 +10,7 @@
 
             body {
                 background-color: gainsboro;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
                 font-size: 1.4rem;
             }
 
@@ -22,7 +22,7 @@
             }
 
             button.chatbot {
-                background-color: slateblue;
+                background-color: darkslateblue;
                 border-radius: 50%;
                 color: yellow;
                 cursor: pointer; /* Show hand cursor on hover */
@@ -36,12 +36,58 @@
                 margin-right: 12%;
             }
 
+            div#chatbot_area {
+                margin: 0%;
+            }
+
+            div#chatbot_thread {
+                background-color: aliceblue;
+                border-radius: 1rem;
+                margin-left: 6%;
+                margin-right: 48%;
+                max-height: 360px;
+                min-height: 360px;
+                overflow-y: scroll;
+            }
+
             h1 {
                 padding: 16px;
             }
 
             label {
                 padding-left: 16px;
+            }
+
+            p.ai_message {
+                background-color: darkgoldenrod;
+                border-radius: 0.5rem;
+                margin-bottom: 12px;
+                margin-left: 6%;
+                margin-right: 32%;
+                margin-top: 12px;
+                padding: 4px;
+                word-wrap: break-word;
+            }
+
+            p.user_message {
+                background-color: darkseagreen;
+                border-radius: 0.5rem;
+                margin-bottom: 12px;
+                margin-left: 32%;
+                margin-right: 6%;
+                margin-top: 12px;
+                padding: 4px;
+                word-wrap: break-word;
+            }
+
+            textarea#user_message_draft {
+                border-radius: 1rem;
+                margin-left: 6%;
+                margin-right: 48%;
+                margin-top: 12px;
+                min-width: 36%;
+                padding: 4px;
+                word-wrap: break-word;
             }
         </style>
 
@@ -60,11 +106,19 @@
                 <button id="log_in">Log In</button>
             </div>
 
-            <div hidden id="user_area">
+            <div  id="user_area">
                 <button id="log_out" style="margin-left: 80%;">Log Out</button>
                 <br />
                 <p>Account Balance: <span id="balance">Loading...</span></p>
                 <button class="chatbot" id="chatbot">C</button>
+
+                <div hidden id="chatbot_area">
+                    <div id="chatbot_thread">
+                        <p class="ai_message">Connecting...</p>
+                    </div>
+                    <textarea id="user_message_draft"></textarea>
+                    <button id="send_message">Send Message</button>
+                </div>
             </div>
         </div>
 
@@ -130,6 +184,20 @@
                 }
             }
 
+            // Send a message to the chatbot
+            async function sendMessage() {
+                // Empty the input field and add message to conversation
+                const messageText = document.getElementById("user_message_draft").value.toString().trim();
+                if (messageText.length < 1) {throw new Error("Message has no content");}
+                document.getElementById("user_message_draft").value = "";
+                let messageElement = document.createElement("p");
+                messageElement.setAttribute("class", "user_message");
+                messageElement.innerText = messageText;
+                document.getElementById("chatbot_thread").appendChild(messageElement);
+
+                // Send message to Lambda
+            }
+
             // Submit login
             document.getElementById("log_in").addEventListener("click", async () => {
                 console.log("Attempting log in...");
@@ -158,7 +226,18 @@
 
             // Open chatbot
             document.getElementById("chatbot").addEventListener("click", async () => {
+                // Change chatbot color to indicate it is opened
+                document.getElementById("chatbot").setAttribute("style", "background-color: slateblue;");
 
+                // Show the chatbot area with the conversation thread and related options
+                document.getElementById("chatbot_area").removeAttribute("hidden");
+
+                // Initiate AI session to Lambda
+            });
+
+            // Add "Send Message" button listener
+            document.getElementById("send_message").addEventListener("click", async () => {
+                await sendMessage();
             });
         </script>
     </body>

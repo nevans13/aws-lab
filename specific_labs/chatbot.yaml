@@ -3,7 +3,7 @@
 ################
 
 # This Cloudformation template creates the infrastructure for a simple AI chatbot.
-# This application simulates a loan customer of a finance company interacting with their account.
+# This application simulates a loan customer of a finance company interacting with their account. The customer can interact either using a traditional webpage or via the chatbot.
 # This lab entry primarily focuses on the AI aspects of the chatbot, such as Amazon Bedrock, not the frontend code.
 # If deploying in a region other than us-east-2, review code for any instances specifically referencing that region.
 
