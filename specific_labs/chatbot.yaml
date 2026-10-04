@@ -19,7 +19,7 @@
 # User Fields in Cognito: first_name, last_name, email, username, password
 # DynamoDB Tables: aws-lab-chatbot-accounts, aws-lab-chatbot-chats
 # Accounts Table Fields in DynamoDB: userId (string), balance (number)
-# Chats Table Fields in DynamoDB: userId (string), chatId (string), chat (string), chatReply (string)
+# Chats Table Fields in DynamoDB: userId (string), chatId (string), status (string), chat (string), chatReply (string), createdAt (number), expiresAt (number)
 
 # Improvements that should be made before this could be used as a production service:
 # - Comprehensive security review of all components
@@ -165,6 +165,16 @@ Resources:
       AuthorizationType: JWT
       RouteKey: POST /api/v1/chat
       Target: !Sub integrations/${APIGatewayIntegration}
+  
+  # Authenticated route to get the chat reply, with the chad ID as a query parameter read by the frontend Lambda
+  GetReplyRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      AuthorizerId: !Ref Authorizer
+      AuthorizationType: JWT
+      RouteKey: GET /api/v1/reply
+      Target: !Sub integrations/${APIGatewayIntegration}
 
   # Execution role for the frontend Lambda function
   FrontendLambdaFunctionRole:
@@ -187,6 +197,22 @@ Resources:
               - Effect: Allow
                 Action: dynamodb:GetItem
                 Resource: !GetAtt AccountsTable.Arn
+        - PolicyName: create-and-read-chats # this policy allows the frontend Lambda function to post to the chats table in DynamoDB and read replies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                Resource: !GetAtt ChatsTable.Arn
+        - PolicyName: invoke-chatbot # this policy allows the frontend Lambda function to invoke the chatbot Lambda function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ChatbotLambdaFunction.Arn
 
   # This Lambda function handles all frontend services for this application (webpage, API, receiving message requests)
   FrontendLambdaFunction:
@@ -195,6 +221,8 @@ Resources:
       Environment:
         Variables:
           ACCOUNTS_TABLE: !Ref AccountsTable # set environment variable for the DynamoDB accounts table
+          CHATS_TABLE: !Ref ChatsTable # set environment variable for the DynamoDB chats table
+          CHATBOT_FUNCTION: !Ref ChatbotLambdaFunction # the name of the chatbot Lambda function for the frontend function to call
       FunctionName: aws-lab-chatbot-frontend
       Runtime: nodejs24.x
       Handler: index.handler
@@ -218,7 +246,8 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*
 
-  # Execution role for the chatbot Lambda function
+  # Execution role for the chatbot Lambda function - specifies what the chatbot Lambda is allowed to execute
+  # Execution of the chatbot Lambda is controlled at the source - in this case permissions are given by the policy attached to the frontend function
   ChatbotLambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -265,7 +294,7 @@ Resources:
       Runtime: nodejs24.x
       Handler: chatbot_function.handler
       Role: !GetAtt ChatbotLambdaFunctionRole.Arn
-      Timeout: 5
+      Timeout: 120
       MemorySize: 128
       Code:
         ZipFile: |
@@ -273,15 +302,7 @@ Resources:
             statusCode: 200,
             headers: { "Content-Type": "text/html" },
             body: "<html><body>PLEASE UPDATE CODE</body></html>"
-
-  # The AWS::Lambda::Permission resource grants an AWS service or another account permission to use a function
-  ChatbotInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref ChatbotLambdaFunction
-      Principal: lambda.amazonaws.com
-      SourceArn: !GetAtt FrontendLambdaFunction.Arn # allow the frontend Lambda to call this chatbot Lambda
+          });
 
   # DynamoDB table for each loan account
   AccountsTable:
@@ -307,13 +328,17 @@ Resources:
     Properties:
       TableName: aws-lab-chatbot-chats
       BillingMode: PAY_PER_REQUEST # no capacity planning needed for a lab-scale table
-      AttributeDefinitions: # the array of attributes that make up the primary key of the table, in this case the chat ID
-        - AttributeName: chatId # the chat ID is a GUID set by the chatbot Lambda
+      AttributeDefinitions: # the array of attributes that make up the primary key of the table, in this case the chat ID + user ID (check both so a user cannot guess a different user's chat ID)
+        - AttributeName: chatId # the chat ID is a GUID set by the frontend Lambda
           AttributeType: S # type is String
+        - AttributeName: userId
+          AttributeType: S
       DeletionProtectionEnabled: false # if set to true, must be disabled before the table can be deleted
-      KeySchema: # the array of attributes that make up the primary key of the table, in this case just the chat ID
+      KeySchema: # the array of attributes that make up the primary key of the table, in this case the chat ID + user ID
         - AttributeName: chatId
           KeyType: HASH # chat ID is used as a partition key
+        - AttributeName: userId
+          KeyType: RANGE # user ID is the sort key
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: false
       SSESpecification:

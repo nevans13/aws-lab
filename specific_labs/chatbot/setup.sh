@@ -21,12 +21,21 @@ sed -i "s/YOUR_APP_CLIENT_ID/$COGNITO_CLIENT_ID/" aws-lab/specific_labs/chatbot/
 
 # Bundle frontend Lambda files at the zip root (with "-j")
 echo Bundling frontend Lambda code...
-zip -j aws-lab/specific_labs/chatbot.zip aws-lab/specific_labs/chatbot/index.js aws-lab/specific_labs/chatbot/index.html > /dev/null
+zip -j aws-lab/specific_labs/frontend.zip aws-lab/specific_labs/chatbot/index.js aws-lab/specific_labs/chatbot/index.html > /dev/null
 
-# Upload the code bundle and wait until the function redeploys
+# Upload the frontend code bundle and wait until the function redeploys
 echo Uploading frontend Lambda code...
-aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot --zip-file fileb://aws-lab/specific_labs/chatbot.zip --output off
-aws lambda wait function-updated --region us-east-2 --function-name aws-lab-chatbot
+aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot-frontend --zip-file fileb://aws-lab/specific_labs/frontend.zip --output off
+aws lambda wait function-updated --region us-east-2 --function-name aws-lab-chatbot-frontend
+
+# Bundle chatbot Lambda files at the zip root (with "-j")
+echo Bundling chatbot Lambda code...
+zip -j aws-lab/specific_labs/chatbot.zip aws-lab/specific_labs/chatbot/chatbot_function.js > /dev/null
+
+# Upload the chatbot code bundle and wait until the function redeploys
+echo Uploading chatbot Lambda code...
+aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot-chatbot --zip-file fileb://aws-lab/specific_labs/chatbot.zip --output off
+aws lambda wait function-updated --region us-east-2 --function-name aws-lab-chatbot-chatbot
 
 # Create a test user in Amazon Cognito
 echo Creating Cognito test user...

@@ -197,16 +197,16 @@
                         "Authorization": "Bearer " + idToken
                     },
                     body: JSON.stringify({
-                        Message: messageText
+                        message: messageText
                     })
                     }
                 );
 
                 // Messages are handled asynchronously, so the client should just receive back a 201 Created rather than a chat message directly
                 if (response.status === 201) {
-                    // If request was successful, response body will be the message ID - return it
+                    // If request was successful, response body will be the chat ID - return it
                     const data = await response.json();
-                    return data.message;
+                    return data.chatId;
                 } else {
                     // If request was unsuccessful, response body will be the error ("message")
                     const data = await response.json();
@@ -269,7 +269,7 @@
                     // sendMessage returns the message ID of the submitted chat message
                     const messageId = await sendMessage(messageText);
                 } catch (err) {
-                    console.error("Could not send chatbot message: " + err.message)
+                    console.error("Could not send chatbot message: " + err.message);
                 }
             });
         </script>
