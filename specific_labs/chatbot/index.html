@@ -106,7 +106,7 @@
                 <button id="log_in">Log In</button>
             </div>
 
-            <div  id="user_area">
+            <div hidden id="user_area">
                 <button id="log_out" style="margin-left: 80%;">Log Out</button>
                 <br />
                 <p>Account Balance: <span id="balance">Loading...</span></p>
@@ -114,7 +114,7 @@
 
                 <div hidden id="chatbot_area">
                     <div id="chatbot_thread">
-                        <p class="ai_message">Connecting...</p>
+                        <p class="ai_message">Hello! How can I help you today?</p>
                     </div>
                     <textarea id="user_message_draft"></textarea>
                     <button id="send_message">Send Message</button>
@@ -123,7 +123,7 @@
         </div>
 
         <script>
-            // Define login function using Cognito
+            // Login function using Cognito - POSTs username/password and returns the user's JWT
             async function login(username, password) {
                 const response = await fetch(
                     "https://cognito-idp.us-east-2.amazonaws.com/",
@@ -149,7 +149,7 @@
                 if (!response.ok) {throw new Error(data.message || "Login failed");}
 
                 const idToken = data.AuthenticationResult.IdToken;
-                sessionStorage.setItem("idToken", idToken); // used for API calls, and cleared on logout
+                sessionStorage.setItem("idToken", idToken); // used for API calls and cleared on logout
                 return idToken;
             }
 
@@ -185,17 +185,33 @@
             }
 
             // Send a message to the chatbot
-            async function sendMessage() {
-                // Empty the input field and add message to conversation
-                const messageText = document.getElementById("user_message_draft").value.toString().trim();
-                if (messageText.length < 1) {throw new Error("Message has no content");}
-                document.getElementById("user_message_draft").value = "";
-                let messageElement = document.createElement("p");
-                messageElement.setAttribute("class", "user_message");
-                messageElement.innerText = messageText;
-                document.getElementById("chatbot_thread").appendChild(messageElement);
+            async function sendMessage(messageText) {
+                // Retrieve the JWT from session storage
+                const idToken = sessionStorage.getItem("idToken");
 
-                // Send message to Lambda
+                // Call the API to POST a new chat message
+                const response = await fetch("/api/v1/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + idToken
+                    },
+                    body: JSON.stringify({
+                        Message: messageText
+                    })
+                    }
+                );
+
+                // Messages are handled asynchronously, so the client should just receive back a 201 Created rather than a chat message directly
+                if (response.status === 201) {
+                    // If request was successful, response body will be the message ID - return it
+                    const data = await response.json();
+                    return data.message;
+                } else {
+                    // If request was unsuccessful, response body will be the error ("message")
+                    const data = await response.json();
+                    throw new Error(data.message || "Chat message failed");
+                }
             }
 
             // Submit login
@@ -218,7 +234,7 @@
                 } catch (err) {
                     console.error("Login failed:", err);
                     alert("Login failed: " + err.message);
-                } 
+                }
             });
 
             // Submit logout
@@ -233,11 +249,28 @@
                 document.getElementById("chatbot_area").removeAttribute("hidden");
 
                 // Initiate AI session to Lambda
+                
             });
 
             // Add "Send Message" button listener
             document.getElementById("send_message").addEventListener("click", async () => {
-                await sendMessage();
+                // Empty the input field and add message to conversation
+                const messageText = document.getElementById("user_message_draft").value.toString().trim();
+                if (messageText.length < 1) {throw new Error("Message has no content");}
+                document.getElementById("user_message_draft").value = "";
+                let messageElement = document.createElement("p");
+                messageElement.setAttribute("class", "user_message");
+                messageElement.innerText = messageText;
+                document.getElementById("chatbot_thread").appendChild(messageElement);
+                
+                // Send the message and wait for a response
+                // Messages are handled asynchronously, so the client should just receive back a 201 Created rather than a chat message directly
+                try {
+                    // sendMessage returns the message ID of the submitted chat message
+                    const messageId = await sendMessage(messageText);
+                } catch (err) {
+                    console.error("Could not send chatbot message: " + err.message)
+                }
             });
         </script>
     </body>

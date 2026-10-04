@@ -20,6 +20,7 @@ const json = (statusCode, body) => ({
   body: JSON.stringify(body)
 });
 
+// Export the handler function to be invoked by Lambda
 exports.handler = async (event) => {
   // Handle requests and return content based on the HTTP method and path
   switch (event.routeKey) {
@@ -29,7 +30,7 @@ exports.handler = async (event) => {
 
     // Get account balance for user's account
     case "GET /api/v1/balance": {
-      // API Gateway already validated the JWT; read the verified claims
+      // API Gateway already validated the JWT; read the verified claims and check that the userId exists
       // The user ID is the sub value from the JWT; fail if there is no user ID
       const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
       if (!userId) return json(401, { message: "Unauthorized" });
@@ -44,6 +45,21 @@ exports.handler = async (event) => {
       // Return either the balance (if account is found) or an error (if account is not found)
       if (!result.Item) return json(404, { message: "Account not found" });
       return json(200, { balance: result.Item.balance });
+    }
+
+    // Submit a chat message to the chatbot
+    // Calls the chatbot Lambda 
+    case "POST /api/v1/chat": {
+      // API Gateway already validated the JWT; read the verified claims and check that the userId exists
+      // The user ID is the sub value from the JWT; fail if there is no user ID
+      const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
+      if (!userId) return json(401, { message: "Unauthorized" });
+
+      // Post the message: insert into the DynamoDB chats table and then alert the chatbot Lambda
+
+      // If message failed to post, retry once; if it still fails, respond with HTTP 500 Internal Server Error
+
+      // If message posted successfully, respond with HTTP 201 Created
     }
 
     // Invalid request path
