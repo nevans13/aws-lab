@@ -342,11 +342,14 @@
                 // Block further sends until this one finishes
                 document.getElementById("send_message").disabled = true;
 
+                // Initialize chatId outside the try block because it is referenced later
+                let chatId;
+
                 // Send the message
                 // Messages are handled asynchronously, so the client should just receive back a 201 Created rather than a chat message directly
                 try {
                     // sendMessage returns the message ID of the submitted chat message
-                    const messageId = await sendMessage(messageText);
+                    chatId = await sendMessage(messageText);
                 } catch (err) {
                     // Release hold on the "Send Message" button
                     document.getElementById("send_message").disabled = false;
