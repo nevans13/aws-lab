@@ -6,13 +6,17 @@ const fs = require("fs");
 const path = require("path");
 const { randomUUID } = require("crypto");
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, GetCommand, PutCommand } = require("@aws-sdk/lib-dynamodb");
+const { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+const { LambdaClient, InvokeCommand } = require("@aws-sdk/client-lambda");
 
 // Import HTML for the frontend - all content is served from the single index.html file
 const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 
 // Create the DynamoDB client
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+
+// Create the Lambda client
+const lambda = new LambdaClient({});
 
 // Helper function to build JSON response body
 const json = (statusCode, body) => ({
@@ -91,12 +95,29 @@ exports.handler = async (event) => {
         }));
 
         // If database insert is successful, call the chatbot Lambda to alert it to the new message
-
+        try {
+          await lambda.send(new InvokeCommand({
+            FunctionName: process.env.CHATBOT_FUNCTION,
+            InvocationType: "Event", // "Event" makes the invocation asynchronous: Lambda queues it and returns immediately, without waiting for the chatbot to finish
+            Payload: JSON.stringify({ userId, chatId }) // the unique key for Lambda to reference to get the message
+          }));
+        } catch (err) {
+          // The message was stored but the chatbot was never alerted; mark it failed so the browser client does not poll forever
+          console.error("Chatbot invoke failed:", err);
+          await db.send(new UpdateCommand({
+            TableName: process.env.CHATS_TABLE,
+            Key: { chatId, userId },
+            UpdateExpression: "SET #status = :failed",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: { ":failed": "failed" }
+          }));
+          return json(500, { message: "Internal server error" });
+        }
 
         // If database insert is successful, return the chat ID to the client, which it will use to poll for a response
         return json(201, { chatId });
       } catch (err) {
-        // If message failed to post, retry once; if it still fails, respond with HTTP 500 Internal Server Error
+        // If message failed to post, respond with HTTP 500 Internal Server Error
         console.error("Chat write failed:", err);
         return json(500, { message: "Internal server error" });
       }
@@ -105,7 +126,30 @@ exports.handler = async (event) => {
     // Get the reply to a chat message
     // Attempts to check for a reply to the chat ID in the chats DynamoDB table
     case "GET /api/v1/reply": {
-      
+      // API Gateway already validated the JWT; read the verified claims and check that the userId exists
+      // The user ID is the sub value from the JWT; fail if there is no user ID
+      const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
+      if (!userId) return json(401, { message: "Unauthorized" });
+
+      // The chat ID is a query parameter
+      const chatId = event.queryStringParameters?.chatId;
+
+      try {
+        // Look up by both keys, so a user can only ever read their own chats
+        const result = await db.send(new GetCommand({
+          TableName: process.env.CHATS_TABLE,
+          Key: { chatId, userId },
+          ProjectionExpression: "#status, chatReply",
+          ExpressionAttributeNames: { "#status": "status" } // "status" is a DynamoDB reserved word, so we use an alias substitution
+        }));
+
+        // A chat that does not exist and a chat that belongs to someone else both return 404
+        if (!result.Item) return json(404, { message: "Chat not found" });
+        return json(200, { status: result.Item.status, chatReply: result.Item.chatReply });
+      } catch (err) {
+        console.error("Chat read failed:", err);
+        return json(500, { message: "Internal server error" });
+      }
     }
 
     // Invalid request path

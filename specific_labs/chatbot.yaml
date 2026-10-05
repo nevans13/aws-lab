@@ -8,7 +8,7 @@
 # If deploying in a region other than us-east-2, review code for any instances specifically referencing that region.
 
 # Components:
-# Customer Browser - runs frontend code for both the customer account page and chatbot
+# Customer Browser - runs frontend code for both the customer account page and chatbot; the frontend is a single-page web app in one file: index.html
 # Amazon Cognito - handles user authentication and JWTs; the client calls Cognito directly for authentication
 # API Gateway - the primary communication point for the client; one API Gateway handles all user interaction except authentication (handled by Cognito)
 # Lambda - coordinates communication among AWS services; two Lambda functions are used - one to serve frontend code (HTML/CSS/JS) and one to process chatbot functions (communicates with Bedrock)
@@ -205,6 +205,7 @@ Resources:
                 Action:
                   - dynamodb:PutItem
                   - dynamodb:GetItem
+                  - dynamodb:UpdateItem
                 Resource: !GetAtt ChatsTable.Arn
         - PolicyName: invoke-chatbot # this policy allows the frontend Lambda function to invoke the chatbot Lambda function
           PolicyDocument:

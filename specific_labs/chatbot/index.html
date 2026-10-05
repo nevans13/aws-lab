@@ -69,6 +69,18 @@
                 word-wrap: break-word;
             }
 
+            p.error_message {
+                background-color: lightcoral;
+                border-radius: 0.5rem;
+                font-style: italic;
+                margin-bottom: 12px;
+                margin-left: 6%;
+                margin-right: 32%;
+                margin-top: 12px;
+                padding: 4px;
+                word-wrap: break-word;
+            }
+
             p.user_message {
                 background-color: darkseagreen;
                 border-radius: 0.5rem;
@@ -244,6 +256,40 @@
                 }
             }
 
+            // Performs a single check for the reply to a chat message using the chat ID
+            async function getReply(chatId) {
+                // Request the chat reply and include the JWT
+                const idToken = sessionStorage.getItem("idToken");
+                const response = await fetch("/api/v1/reply?chatId=" + encodeURIComponent(chatId), {
+                    headers: { "Authorization": "Bearer " + idToken }
+                });
+
+                if (response.status === 401) throw new Error("Session expired, please log in again");
+                if (!response.ok) throw new Error("Could not get reply (" + response.status + ")");
+                return await response.json();
+            }
+
+            // Helper function to implement "sleep"
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            // Poll until the reply is ready, the chat fails, or the client-side timeout is reached
+            // Errors returned from this function are inserted into the chatbot thread for the user to read
+            async function waitForReply(chatId, intervalMs=2000, timeoutMs=60000) {
+                const deadline = Date.now() + timeoutMs;
+
+                // Repeat polling of "pending" status until timeout is hit
+                while (Date.now() < deadline) {
+                    await sleep(intervalMs);
+
+                    const result = await getReply(chatId);
+                    if (result.status === "completed") return result.chatReply;
+                    if (result.status === "failed") throw new Error("The assistant could not answer that message.");
+                }
+
+                // Throw an error if the timeout is hit
+                throw new Error("The assistant is taking longer than expected, please try again.");
+            }
+
             // Submit login
             document.getElementById("log_in").addEventListener("click", async () => {
                 console.log("Attempting log in...");
@@ -293,13 +339,47 @@
                 messageElement.innerText = messageText;
                 document.getElementById("chatbot_thread").appendChild(messageElement);
                 
-                // Send the message and wait for a response
+                // Block further sends until this one finishes
+                document.getElementById("send_message").disabled = true;
+
+                // Send the message
                 // Messages are handled asynchronously, so the client should just receive back a 201 Created rather than a chat message directly
                 try {
                     // sendMessage returns the message ID of the submitted chat message
                     const messageId = await sendMessage(messageText);
                 } catch (err) {
+                    // Release hold on the "Send Message" button
+                    document.getElementById("send_message").disabled = false;
+
                     console.error("Could not send chatbot message: " + err.message);
+                    throw new Error("Could not send chatbot message: " + err.message); // breaks execution here if message could not be sent
+                }
+
+                // Get the message reply
+                try {
+                    // Add a placeholder reply
+                    let replyElement = document.createElement("p");
+                    replyElement.setAttribute("class", "ai_message");
+                    replyElement.innerText = "Thinking...";
+                    document.getElementById("chatbot_thread").appendChild(replyElement);
+
+                    // Get the message reply
+                    const chatReply = await waitForReply(chatId);
+                    if (chatReply === null) return; // logged out; the UI was already reset
+                    
+                    // Replace the placeholder message with the actual reply
+                    replyElement.innerText = chatReply;
+                } catch (err) {
+                    console.error("Chat failed:", err);
+
+                    // Add an error reply
+                    let errorElement = document.createElement("p");
+                    errorElement.setAttribute("class", "error_message");
+                    errorElement.innerText = err;
+                    document.getElementById("chatbot_thread").appendChild(errorElement);
+                } finally {
+                    // Release hold on the "Send Message" button
+                    document.getElementById("send_message").disabled = false;
                 }
             });
         </script>
