@@ -153,6 +153,36 @@
                 return idToken;
             }
 
+            // Logs the user session out locally in session storage and remotely with Cognito
+            async function logout() {
+                // Get the JWT from session storage - returns null if token does not exist
+                const accessToken = sessionStorage.getItem("accessToken");
+
+                try {
+                    // Attempt logout if the JWT exists
+                    if (accessToken) {
+                        // Call Cognito GlobalSignOut, which revokes the JWT refresh tokens on all devices
+                        await fetch("https://cognito-idp.us-east-2.amazonaws.com/", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/x-amz-json-1.1",
+                                "X-Amz-Target": "AWSCognitoIdentityProviderService.GlobalSignOut"
+                            },
+                            body: JSON.stringify({ AccessToken: accessToken })
+                        });
+                    }
+                } catch (err) {
+                    console.error("Sign-out request failed:", err);
+                } finally {
+                    // Clear local state regardless if remote sign-out succeeds or fails
+                    sessionStorage.removeItem("idToken");
+                    sessionStorage.removeItem("accessToken");
+
+                    // Restore UI
+                    location.reload();
+                }
+            }
+
             // Fetch the account balance from the API and display it
             async function loadBalance() {
                 // Read the Cognito ID token JWT from the browser session's storage
@@ -238,7 +268,7 @@
             });
 
             // Submit logout
-            //document.getElementById("log_out").addEventListener("click", async () => {});
+            document.getElementById("log_out").addEventListener("click", async () => {await logout()});
 
             // Open chatbot
             document.getElementById("chatbot").addEventListener("click", async () => {
