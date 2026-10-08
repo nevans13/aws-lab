@@ -360,6 +360,10 @@ Outputs:
     Description: Elastic IP address for the OPNsense WAN interface (management/internet-facing)
     Value: !Ref WanEip
 
+  LinuxPrivateIp:
+    Description: Private IP address of the test Linux EC2 instance
+    Value: !GetAtt LinuxInstanceA.PrivateIp
+
   PuttyCommandOPNsenseA:
     Description: Output the Putty CLI command to SSH to aws-lab-opnsense-a
     Condition: CreateOpnsenseInstances
