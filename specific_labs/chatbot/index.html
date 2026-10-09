@@ -162,6 +162,10 @@
 
                 const idToken = data.AuthenticationResult.IdToken;
                 sessionStorage.setItem("idToken", idToken); // used for API calls and cleared on logout
+                
+                const accessToken = data.AuthenticationResult.AccessToken;
+                sessionStorage.setItem("accessToken", accessToken); // access token is required for user-level calls
+
                 return idToken;
             }
 
@@ -209,6 +213,7 @@
                     // Handle any errors
                     if (response.status === 401) {
                         throw new Error("Session expired, please log in again");
+                        await logout();
                     }
                     if (!response.ok) {
                         throw new Error("Could not load balance (" + response.status + ")");
@@ -378,13 +383,24 @@
                     // Add an error reply
                     let errorElement = document.createElement("p");
                     errorElement.setAttribute("class", "error_message");
-                    errorElement.innerText = err;
+                    errorElement.innerText = err.message;
                     document.getElementById("chatbot_thread").appendChild(errorElement);
                 } finally {
                     // Release hold on the "Send Message" button
                     document.getElementById("send_message").disabled = false;
                 }
             });
+
+            // If a token is already stored, skip the login form and let the API confirm it is still valid
+            // This runs when the page loads, to attempt to preserve session after page refresh
+            if (sessionStorage.getItem("idToken")) {
+                // If login is successful, hide login form and show user area (account)
+                document.getElementById("login_form").setAttribute("hidden", "");
+                document.getElementById("user_area").removeAttribute("hidden");
+
+                // Fetch and show the account balance
+                await loadBalance(); // a 401 here calls logout() and returns to the login form
+            }
         </script>
     </body>
 </html>

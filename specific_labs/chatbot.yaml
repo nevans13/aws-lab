@@ -136,6 +136,18 @@ Resources:
       ApiId: !Ref APIGateway
       StageName: $default # the $default stage is served from the base of the API's URL
       AutoDeploy: true # API updates to not require an explicit redeployment of the API
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: false
+        DataTraceEnabled: false
+        ThrottlingBurstLimit: 10 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
+        ThrottlingRateLimit: 20 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
+      RouteSettings: # per-route settings that override the DefaultRouteSettings
+        "POST /api/v1/chat": # each chat message triggers a Bedrock call, so this stays low
+          ThrottlingRateLimit: 1
+          ThrottlingBurstLimit: 3
+        "GET /api/v1/reply": # polled every ~2 seconds by each active chat, so this needs headroom
+          ThrottlingRateLimit: 20
+          ThrottlingBurstLimit: 40
 
   # This is the start of all the API routes on the API Gateway
   # Primary client frontend route (returns the index.html code); does not require a JWT because the user is unauthenticated when requesting the frontend code
