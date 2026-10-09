@@ -139,8 +139,8 @@ Resources:
       DefaultRouteSettings:
         DetailedMetricsEnabled: false
         DataTraceEnabled: false
-        ThrottlingBurstLimit: 10 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
-        ThrottlingRateLimit: 20 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
+        ThrottlingBurstLimit: 20 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
+        ThrottlingRateLimit: 10 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
       RouteSettings: # per-route settings that override the DefaultRouteSettings
         "POST /api/v1/chat": # each chat message triggers a Bedrock call, so this stays low
           ThrottlingRateLimit: 1
@@ -274,26 +274,33 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
       Policies:
-        - PolicyName: crud-chats # this policy allows the chatbot Lambda function to create, read, update, and delete the chats table in DynamoDB
+        - PolicyName: chats # this policy allows the chatbot Lambda function to read a chat, read the conversation history, and write the reply
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:PutItem
                   - dynamodb:GetItem
                   - dynamodb:UpdateItem
-                  - dynamodb:DeleteItem
-                Resource: !GetAtt ChatsTable.Arn
-                Sid: AllowChatbotLambdaCrudToChatsTable
-        - PolicyName: bedrock # this policy allows the chatbot Lambda function all permissions in Bedrock
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ChatsTable.Arn
+                  - !Sub ${ChatsTable.Arn}/index/SessionIndex # Query on an index needs its own resource entry
+                Sid: AllowChatbotLambdaChatsTable
+        - PolicyName: bedrock # this policy allows the chatbot Lambda function to call Nova 2 Lite with the guardrail, and nothing else in Bedrock
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: bedrock:*
-                Resource: "*"
-                Sid: AllowChatbotLambdaAllBedrock
+                Action: bedrock:InvokeModel # also covers the Converse API
+                Resource:
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0
+                  - arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0 # the underlying model in whichever region serves the request
+                Sid: AllowChatbotLambdaInvokeModel
+              - Effect: Allow
+                Action: bedrock:ApplyGuardrail
+                Resource: !GetAtt BedrockGuardrail.GuardrailArn
+                Sid: AllowChatbotLambdaApplyGuardrail
 
   # This Lambda function handles communication with the Bedrock AI chatbot
   # This Lambda stores chat messages in DynamoDB, interacts with Bedrock, and is called by the frontend Lambda
@@ -303,6 +310,9 @@ Resources:
       Environment:
         Variables:
           CHATS_TABLE: !Ref ChatsTable # set environment variable for the DynamoDB chats table
+          MODEL_ID: us.amazon.nova-2-lite-v1:0 # Nova 2 Lite through its cross-region inference profile
+          GUARDRAIL_ID: !GetAtt BedrockGuardrail.GuardrailId
+          GUARDRAIL_VERSION: DRAFT # use a numbered version once the guardrail has real policies
       FunctionName: aws-lab-chatbot-chatbot
       Runtime: nodejs24.x
       Handler: chatbot_function.handler
@@ -316,6 +326,14 @@ Resources:
             headers: { "Content-Type": "text/html" },
             body: "<html><body>PLEASE UPDATE CODE</body></html>"
           });
+
+  # Disable automatic retries
+  ChatbotLambdaFunctionInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref ChatbotLambdaFunction
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0 # avoid duplicate model calls; the function records failures itself
 
   # DynamoDB table for each loan account
   AccountsTable:
@@ -341,11 +359,31 @@ Resources:
     Properties:
       TableName: aws-lab-chatbot-chats
       BillingMode: PAY_PER_REQUEST # no capacity planning needed for a lab-scale table
-      AttributeDefinitions: # the array of attributes that make up the primary key of the table, in this case the chat ID + user ID (check both so a user cannot guess a different user's chat ID)
+      AttributeDefinitions: # attributes used in the table key or in an index key
         - AttributeName: chatId # the chat ID is a GUID set by the frontend Lambda
           AttributeType: S # type is String
         - AttributeName: userId
           AttributeType: S
+        - AttributeName: sessionId # identifies one login session, used to group a conversation
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N # type is Number
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIndex # lets the chatbot Lambda fetch one conversation in time order
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE # the table keys are always included; these are added
+            NonKeyAttributes:
+              - chat
+              - chatReply
+              - status
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
       DeletionProtectionEnabled: false # if set to true, must be disabled before the table can be deleted
       KeySchema: # the array of attributes that make up the primary key of the table, in this case the chat ID + user ID
         - AttributeName: chatId
@@ -356,6 +394,16 @@ Resources:
         PointInTimeRecoveryEnabled: false
       SSESpecification:
         SSEEnabled: false # server-side encryption is always enabled at rest, but with AWS owned keys (rather than admin-controlled AWS managed KMS keys)
+
+  # Start of Bedrock resources
+  # Guardrails are safeguard policies
+  BedrockGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: aws-lab-chatbot
+      Description: Guardrail for the chatbot agent
+      BlockedInputMessaging: Sorry, I can't help with that request.
+      BlockedOutputsMessaging: Sorry, I can't provide that response.
 
 Outputs:
   FrontendUrl:
