@@ -12,7 +12,7 @@
 # Amazon Cognito - handles user authentication and JWTs; the client calls Cognito directly for authentication
 # API Gateway - the primary communication point for the client; one API Gateway handles all user interaction except authentication (handled by Cognito)
 # Lambda - coordinates communication among AWS services; two Lambda functions are used - one to serve frontend code (HTML/CSS/JS) and one to process chatbot functions (communicates with Bedrock)
-# Bedrock - hosts the AI models used with custom guardrails
+# Bedrock - hosts the AI models used with custom guardrails. This application uses the Converse API from the Bedrock Runtime, which is a stateless AI service (no context is maintained by the model between calls).
 # DynamoDB - persistent storage layer for user information and AI chat messages
 # CloudWatch - monitoring and logging
 
@@ -303,6 +303,14 @@ Resources:
                 Action: bedrock:ApplyGuardrail
                 Resource: !GetAtt BedrockGuardrail.GuardrailArn
                 Sid: AllowChatbotLambdaApplyGuardrail
+        - PolicyName: read-balance # this policy allows the chatbot Lambda function's balance tool to read the accounts table in DynamoDB
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt AccountsTable.Arn
+                Sid: AllowChatbotLambdaReadAccounts
 
   # This Lambda function handles communication with the Bedrock AI chatbot
   # This Lambda stores chat messages in DynamoDB, interacts with Bedrock, and is called by the frontend Lambda
@@ -312,6 +320,7 @@ Resources:
       Environment:
         Variables:
           CHATS_TABLE: !Ref ChatsTable # set environment variable for the DynamoDB chats table
+          ACCOUNTS_TABLE: !Ref AccountsTable # the table the balance tool reads
           MODEL_ID: us.amazon.nova-2-lite-v1:0 # Nova 2 Lite through its cross-region inference profile
           GUARDRAIL_ID: !GetAtt BedrockGuardrail.GuardrailId
           GUARDRAIL_VERSION: DRAFT # use a numbered version once the guardrail has real policies
