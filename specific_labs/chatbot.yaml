@@ -406,6 +406,11 @@ Resources:
       Description: Guardrail for the chatbot agent
       BlockedInputMessaging: Sorry, I can't help with that request.
       BlockedOutputsMessaging: Sorry, I can't provide that response.
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: HATE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
 
 Outputs:
   FrontendUrl:
