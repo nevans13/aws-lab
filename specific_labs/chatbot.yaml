@@ -132,13 +132,15 @@ Resources:
   # Stage (deploy) the API; each stage is a named deployment of the API (prod, dev, etc)
   APIGatewayStage:
     Type: AWS::ApiGatewayV2::Stage
+    DependsOn:
+      - PostChatRoute
+      - GetReplyRoute
     Properties:
       ApiId: !Ref APIGateway
       StageName: $default # the $default stage is served from the base of the API's URL
       AutoDeploy: true # API updates to not require an explicit redeployment of the API
       DefaultRouteSettings:
         DetailedMetricsEnabled: false
-        DataTraceEnabled: false
         ThrottlingBurstLimit: 20 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
         ThrottlingRateLimit: 10 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
       RouteSettings: # per-route settings that override the DefaultRouteSettings

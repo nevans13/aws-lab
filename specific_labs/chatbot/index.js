@@ -58,7 +58,9 @@ exports.handler = async (event) => {
       // API Gateway already validated the JWT; read the verified claims and check that the userId exists
       // The user ID is the sub value from the JWT; fail if there is no user ID
       const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
-      if (!userId) return json(401, { message: "Unauthorized" });
+      const authTime = event.requestContext?.authorizer?.jwt?.claims?.auth_time; // when the user logged in; constant for the login and new after the next login
+      if (!userId || !authTime) return json(401, { message: "Unauthorized" });
+      const sessionId = `${userId}-${authTime}`; // groups all chats from one login into one conversation by user ID and auth (session) time
 
       // Get the message text
       // Parse the JSON body; a missing or malformed body is a client error
@@ -86,6 +88,7 @@ exports.handler = async (event) => {
           Item: {
             userId, // uses JS shorthand property names (instead of userId: userId)
             chatId, // uses JS shorthand property names (instead of chatId: chatId)
+            sessionId, // the conversation this chat belongs to
             status: "pending",
             chat: chatText,
             createdAt: now,
@@ -133,6 +136,11 @@ exports.handler = async (event) => {
 
       // The chat ID is a query parameter
       const chatId = event.queryStringParameters?.chatId;
+
+      // Validate chat ID; responds with an HTTP 400 instead of a DynamoDB error and the default HTTP 500 below
+      if (typeof chatId !== "string" || !/^[0-9a-f-]{36}$/i.test(chatId)) {
+        return json(400, { message: "Invalid chat ID" });
+      }
 
       try {
         // Look up by both keys, so a user can only ever read their own chats
