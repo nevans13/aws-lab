@@ -44,7 +44,7 @@
                 background-color: aliceblue;
                 border-radius: 1rem;
                 margin-left: 6%;
-                margin-right: 48%;
+                margin-right: 32%;
                 max-height: 360px;
                 min-height: 360px;
                 overflow-y: scroll;
@@ -59,8 +59,9 @@
             }
 
             p.ai_message {
-                background-color: darkgoldenrod;
+                background-color: goldenrod;
                 border-radius: 0.5rem;
+                font-size: 1rem;
                 margin-bottom: 12px;
                 margin-left: 6%;
                 margin-right: 32%;
@@ -72,6 +73,7 @@
             p.error_message {
                 background-color: lightcoral;
                 border-radius: 0.5rem;
+                font-size: 1rem;
                 font-style: italic;
                 margin-bottom: 12px;
                 margin-left: 6%;
@@ -84,6 +86,7 @@
             p.user_message {
                 background-color: darkseagreen;
                 border-radius: 0.5rem;
+                font-size: 1rem;
                 margin-bottom: 12px;
                 margin-left: 32%;
                 margin-right: 6%;
@@ -110,7 +113,7 @@
         <div>
             <h1>My Account</h1>
 
-            <div id="login_form">
+            <div hidden id="login_form">
                 <label for="username">Username: </label>
                 <input id="username" name="username" type="text" />
                 <label for="password">Password: </label>
@@ -118,10 +121,18 @@
                 <button id="log_in">Log In</button>
             </div>
 
-            <div hidden id="user_area">
+            <div  id="user_area">
                 <button id="log_out" style="margin-left: 80%;">Log Out</button>
                 <br />
-                <p>Account Balance: <span id="balance">Loading...</span></p>
+                <p>
+                    Account Balance: <span id="balance">Loading...</span>
+                    <button id="refresh_balance">Refresh</button>
+                </p>
+                <p>
+                    Payment Amount: 
+                    <input id="payment_amount" name="payment_amount" type="text" />
+                    <button id="submit_payment">Submit Payment</button>
+                </p>
                 <button class="chatbot" id="chatbot">C</button>
 
                 <div hidden id="chatbot_area">
@@ -135,6 +146,9 @@
         </div>
 
         <script>
+            // Helper function to implement "sleep"
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
             // Login function using Cognito - POSTs username/password and returns the user's JWT
             async function login(username, password) {
                 const response = await fetch(
@@ -231,6 +245,38 @@
                 }
             }
 
+            // Make a payment
+            async function submitPayment(paymentAmountFloat) {
+                const idToken = sessionStorage.getItem("idToken");
+
+                if (typeof(paymentAmountFloat) !== "number") {throw new Error ("Payment amount is not a number")}
+
+                try {
+                    const response = await fetch ("/api/v1/payment", {
+                        method: "POST",
+                        headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + idToken
+                        },
+                        body: JSON.stringify({
+                            payment_amount: paymentAmountFloat
+                        })
+                        }
+                    );
+
+                    if (response.status === 201) {
+                        // If request was successful, return without an error
+                        return
+                    } else {
+                        // If request was unsuccessful, response body will be the error ("message")
+                        const data = await response.json();
+                        throw new Error(data.message || "Payment failed");
+                    }
+                } catch {
+                    throw new Error ("Error with payment")
+                }
+            }
+
             // Send a message to the chatbot
             async function sendMessage(messageText) {
                 // Retrieve the JWT from session storage
@@ -274,9 +320,6 @@
                 return await response.json();
             }
 
-            // Helper function to implement "sleep"
-            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
             // Poll until the reply is ready, the chat fails, or the client-side timeout is reached
             // Errors returned from this function are inserted into the chatbot thread for the user to read
             async function waitForReply(chatId, intervalMs=2000, timeoutMs=60000) {
@@ -319,7 +362,38 @@
             });
 
             // Submit logout
-            document.getElementById("log_out").addEventListener("click", async () => {await logout()});
+            document.getElementById("log_out").addEventListener("click", async () => {await logout();});
+
+            // Refresh account balance
+            document.getElementById("refresh_balance").addEventListener("click", async () => {await loadBalance();});
+
+            // Make a payment manually in the account page
+            document.getElementById("submit_payment").addEventListener("click", async () => {
+                // Get the payment amount from the input and validate the format; the server performs full validation
+                const paymentAmount = document.getElementById("payment_amount").value.toString().trim();
+                const paymentAmountFloat = parseFloat(paymentAmount);
+                if (!paymentAmountFloat) {
+                    console.error("Invalid payment amount: " + paymentAmount);
+                    alert("Invalid payment amount: " + paymentAmount);
+                    return
+                }
+
+                try {
+                    // Disable submit payment button to prevent a second payment while processing
+                    document.getElementById("submit_payment").disabled = true;
+
+                    // If payment is successful, refresh the balance after
+                    await submitPayment(paymentAmountFloat);
+                    await loadBalance();
+                    document.getElementById("submit_payment").disabled = false;
+                    return
+                } catch (err) {
+                    console.error("Payment failed: " + err);
+                    alert("Payment failed: " + err);
+                    document.getElementById("submit_payment").disabled = false;
+                    return
+                }
+            });
 
             // Open chatbot
             document.getElementById("chatbot").addEventListener("click", async () => {
@@ -328,9 +402,6 @@
 
                 // Show the chatbot area with the conversation thread and related options
                 document.getElementById("chatbot_area").removeAttribute("hidden");
-
-                // Initiate AI session to Lambda
-                
             });
 
             // Add "Send Message" button listener

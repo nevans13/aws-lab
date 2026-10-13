@@ -13,12 +13,12 @@
 # API Gateway - the primary communication point for the client; one API Gateway handles all user interaction except authentication (handled by Cognito)
 # Lambda - coordinates communication among AWS services; two Lambda functions are used - one to serve frontend code (HTML/CSS/JS) and one to process chatbot functions (communicates with Bedrock)
 # Bedrock - hosts the AI models used with custom guardrails. This application uses the Converse API from the Bedrock Runtime, which is a stateless AI service (no context is maintained by the model between calls).
-# DynamoDB - persistent storage layer for user information and AI chat messages
+# DynamoDB - persistent storage layer for user information and AI chat messages; DynamoDB does not require a defined schema
 # CloudWatch - monitoring and logging
 
 # User Fields in Cognito: first_name, last_name, email, username, password
 # DynamoDB Tables: aws-lab-chatbot-accounts, aws-lab-chatbot-chats
-# Accounts Table Fields in DynamoDB: userId (string), balance (number)
+# Accounts Table Fields in DynamoDB: userId (string), balance (number), payments (list)
 # Chats Table Fields in DynamoDB: userId (string), chatId (string), status (string), chat (string), chatReply (string), createdAt (number), expiresAt (number)
 
 # Improvements that should be made before this could be used as a production service:
@@ -169,6 +169,16 @@ Resources:
       AuthorizationType: JWT
       RouteKey: GET /api/v1/balance
       Target: !Sub integrations/${APIGatewayIntegration}
+
+  # Authenticated route to submit a payment to the frontend Lambda
+  PostPaymentRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      AuthorizerId: !Ref Authorizer
+      AuthorizationType: JWT
+      RouteKey: POST /api/v1/payment
+      Target: !Sub integrations/${APIGatewayIntegration}
   
   # Authenticated route to submit a new chat message to the frontend Lambda
   PostChatRoute:
@@ -180,7 +190,7 @@ Resources:
       RouteKey: POST /api/v1/chat
       Target: !Sub integrations/${APIGatewayIntegration}
   
-  # Authenticated route to get the chat reply, with the chad ID as a query parameter read by the frontend Lambda
+  # Authenticated route to get the chat reply, with the chat ID as a query parameter read by the frontend Lambda
   GetReplyRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
@@ -204,12 +214,14 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
       Policies:
-        - PolicyName: read-own-balance # this policy allows the frontend Lambda function to query the accounts table in DynamoDB
+        - PolicyName: update-accounts # this policy allows the frontend Lambda function to read and update customer account information
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: dynamodb:GetItem
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
                 Resource: !GetAtt AccountsTable.Arn
         - PolicyName: create-and-read-chats # this policy allows the frontend Lambda function to post to the chats table in DynamoDB and read replies
           PolicyDocument:
@@ -240,7 +252,7 @@ Resources:
           CHATBOT_FUNCTION: !Ref ChatbotLambdaFunction # the name of the chatbot Lambda function for the frontend function to call
       FunctionName: aws-lab-chatbot-frontend
       Runtime: nodejs24.x
-      Handler: index.handler
+      Handler: frontend_function.handler
       Role: !GetAtt FrontendLambdaFunctionRole.Arn
       Timeout: 5
       MemorySize: 128
@@ -261,8 +273,8 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*
 
-  # Execution role for the chatbot Lambda function - specifies what the chatbot Lambda is allowed to execute
-  # Execution of the chatbot Lambda is controlled at the source - in this case permissions are given by the policy attached to the frontend function
+  # Execution role for the chatbot Lambda function - defines what AWS resources the chatbot Lambda can access (DynamoDB, Bedrock)
+  # Who can invoke the chatbot Lambda is controlled separately, by the invoke-chatbot policy on the frontend Lambda's execution role
   ChatbotLambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -287,7 +299,7 @@ Resources:
                   - dynamodb:Query
                 Resource:
                   - !GetAtt ChatsTable.Arn
-                  - !Sub ${ChatsTable.Arn}/index/SessionIndex # Query on an index needs its own resource entry
+                  - !Sub ${ChatsTable.Arn}/index/SessionIndex # query on an index needs its own resource entry
                 Sid: AllowChatbotLambdaChatsTable
         - PolicyName: bedrock # this policy allows the chatbot Lambda function to call Nova 2 Lite with the guardrail, and nothing else in Bedrock
           PolicyDocument:

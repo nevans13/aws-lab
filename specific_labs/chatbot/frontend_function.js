@@ -52,6 +52,65 @@ exports.handler = async (event) => {
       return json(200, { balance: result.Item.balance });
     }
 
+        // Submit a payment toward the account balance
+    case "POST /api/v1/payment": {
+      // API Gateway already validated the JWT; the user ID is the verified sub claim
+      const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
+      if (!userId) return json(401, { message: "Unauthorized" });
+
+      // Parse the JSON body; a missing or malformed body is a client error
+      let body;
+      try {
+        body = JSON.parse(event.body ?? "");
+      } catch {
+        return json(400, { message: "Invalid JSON body" });
+      }
+
+      // Validate the payment amount before touching the database
+      const paymentAmount = body?.payment_amount;
+      if (typeof paymentAmount !== "number" || !Number.isFinite(paymentAmount)) {
+        return json(400, { message: "Payment amount must be a number" });
+      }
+      const cents = Math.round(paymentAmount * 100);
+      if (Math.abs(paymentAmount * 100 - cents) > 1e-6) {
+        return json(400, { message: "Payment amount can have at most two decimal places" });
+      }
+      if (cents < 100 || cents > 100000000) {
+        return json(400, { message: "Payment amount must be between $1.00 and $1,000,000.00" });
+      }
+      const amount = cents / 100;
+
+      const paymentId = randomUUID();
+      const now = Math.floor(Date.now() / 1000); // epoch seconds, from the server clock
+
+      try {
+        // One atomic update: subtract the payment from the balance and append it to the payments list
+        // The condition rejects the write if the account does not exist or the payment would exceed the balance
+        await db.send(new UpdateCommand({
+          TableName: process.env.ACCOUNTS_TABLE,
+          Key: { userId },
+          UpdateExpression: "SET balance = balance - :amount, payments = list_append(if_not_exists(payments, :empty), :payment)",
+          ConditionExpression: "attribute_exists(userId) AND balance >= :amount",
+          ExpressionAttributeValues: {
+            ":amount": amount,
+            ":empty": [],
+            ":payment": [{ paymentId, amount, createdAt: now }]
+          },
+          ReturnValuesOnConditionCheckFailure: "ALL_OLD" // lets us tell "no account" from "amount too high" below
+        }));
+
+        // The client reloads the balance after a successful payment
+        return json(201, { paymentId });
+      } catch (err) {
+        if (err.name === "ConditionalCheckFailedException") {
+          if (!err.Item) return json(404, { message: "Account not found" });
+          return json(400, { message: "Payment amount cannot exceed your current balance" });
+        }
+        console.error("Payment failed:", err);
+        return json(500, { message: "Internal server error" });
+      }
+    }
+
     // Submit a chat message to the chatbot
     // Calls the chatbot Lambda to alert it to a new chat message
     case "POST /api/v1/chat": {

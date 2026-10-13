@@ -21,7 +21,7 @@ sed -i "s/YOUR_APP_CLIENT_ID/$COGNITO_CLIENT_ID/" aws-lab/specific_labs/chatbot/
 
 # Bundle frontend Lambda files at the zip root (with "-j")
 echo Bundling frontend Lambda code...
-zip -j aws-lab/specific_labs/frontend.zip aws-lab/specific_labs/chatbot/index.js aws-lab/specific_labs/chatbot/index.html > /dev/null
+zip -j aws-lab/specific_labs/frontend.zip aws-lab/specific_labs/chatbot/frontend_function.js aws-lab/specific_labs/chatbot/index.html > /dev/null
 
 # Upload the frontend code bundle and wait until the function redeploys
 echo Uploading frontend Lambda code...
@@ -57,7 +57,7 @@ aws cognito-idp admin-set-user-password --region us-east-2 --permanent --usernam
 # Create an accounts record for the user with a starting balance; user ID is based on the sub (a UUID) from Cognito
 echo Setting test user account balance in DynamoDB...
 SUB=$(aws cognito-idp admin-get-user --region us-east-2 --username "$USERNAME" --query "UserAttributes[?Name=='sub'].Value" --output text --user-pool-id "$COGNITO_POOL_ID")
-aws dynamodb put-item --region us-east-2 --table-name aws-lab-chatbot-accounts --item "{\"userId\":{\"S\":\"$SUB\"},\"balance\":{\"N\":\"1234.56\"}}" --output off
+aws dynamodb put-item --region us-east-2 --table-name aws-lab-chatbot-accounts --item "{\"userId\":{\"S\":\"$SUB\"},\"balance\":{\"N\":\"15000.00\"}}" --output off
 
 # Output completion and further instructions
 WEBPAGE=$(aws cloudformation describe-stacks --stack-name aws-lab-chatbot --region us-east-2 --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" --output text)
