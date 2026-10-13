@@ -412,7 +412,7 @@ Resources:
     Type: AWS::Bedrock::Guardrail
     Properties:
       Name: aws-lab-chatbot
-      Description: Guardrail for the chatbot agent
+      Description: Guardrail for the Converse chatbot
       BlockedInputMessaging: Sorry, I can't help with that request.
       BlockedOutputsMessaging: Sorry, I can't provide that response.
       ContentPolicyConfig:

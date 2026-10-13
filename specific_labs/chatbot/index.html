@@ -212,8 +212,8 @@
 
                     // Handle any errors
                     if (response.status === 401) {
-                        throw new Error("Session expired, please log in again");
                         await logout();
+                        throw new Error("Session expired, please log in again");
                     }
                     if (!response.ok) {
                         throw new Error("Could not load balance (" + response.status + ")");
@@ -360,6 +360,13 @@
                     document.getElementById("send_message").disabled = false;
 
                     console.error("Could not send chatbot message: " + err.message);
+
+                    // Add an error reply to the chat thread
+                    let errorElement = document.createElement("p");
+                    errorElement.setAttribute("class", "error_message");
+                    errorElement.innerText = err.message;
+                    document.getElementById("chatbot_thread").appendChild(errorElement);
+
                     throw new Error("Could not send chatbot message: " + err.message); // breaks execution here if message could not be sent
                 }
 

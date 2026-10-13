@@ -12,9 +12,12 @@ const bedrock = new BedrockRuntimeClient({});
 const SYSTEM_PROMPT =
   "You are a customer service assistant for a loan servicing company. " +
   "You answer general questions about loans and payments in a polite, concise way. " +
+  "Use the get_account_balance tool when the customer asks about their balance. " +
   "You must not guess at any customer account data that you do not have access to. " +
   "If a request is outside loan servicing, politely decline and offer to help with a loan-related question. " + 
-  "Please do not provide any recommendations to the customer on any topics.";
+  "Please do not provide any recommendations to the customer on any topics. " +
+  "Respond in plain text only. Do not use Markdown formatting such as asterisks, pound signs, backticks, or tables. " +
+  "If you need a list, write numbered lines like '1.' and '2.'";
 
 const MAX_HISTORY_TURNS = 10; // earlier question/answer pairs sent to the model with each new message
 const MAX_TOOL_ROUNDS = 5; // limit on model-tool round trips per message, so a confused model cannot loop
