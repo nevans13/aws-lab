@@ -218,6 +218,8 @@
                 // Read the Cognito ID token JWT from the browser session's storage
                 const idToken = sessionStorage.getItem("idToken");
 
+                document.getElementById("balance").innerText = "Loading...";
+
                 try {
                     // Request the balance from the API
                     const response = await fetch("/api/v1/balance", {
@@ -250,6 +252,8 @@
                 const idToken = sessionStorage.getItem("idToken");
 
                 if (typeof(paymentAmountFloat) !== "number") {throw new Error("Payment amount is not a number");}
+
+                document.getElementById("payment_amount").value = "";
 
                 let response;
                 try {
@@ -531,6 +535,27 @@
                 // Fetch and show the account balance
                 loadBalance(); // a 401 here calls logout() and returns to the login form
             }
+
+            // Pressing Enter in the username or password field submits the login form
+            document.getElementById("login_form").addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && !event.repeat) {
+                    document.getElementById("log_in").click();
+                }
+            });
+
+            // Pressing Enter in the chat draft box will submit the message
+            document.getElementById("user_message_draft").addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.repeat) {
+                    event.preventDefault(); // stop the newline from being typed
+                    document.getElementById("send_message").click();
+                }
+            });
+
+            // Keep the newest message in view: scroll the chat thread to the bottom whenever its content changes
+            const chatThread = document.getElementById("chatbot_thread");
+            new MutationObserver(() => {
+                chatThread.scrollTop = chatThread.scrollHeight;
+            }).observe(chatThread, { childList: true, subtree: true, characterData: true });
         </script>
     </body>
 </html>
