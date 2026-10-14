@@ -19,7 +19,7 @@
 # User Fields in Cognito: first_name, last_name, email, username, password
 # DynamoDB Tables: aws-lab-chatbot-accounts, aws-lab-chatbot-chats
 # Accounts Table Fields in DynamoDB: userId (string), balance (number), payments (list)
-# Chats Table Fields in DynamoDB: userId (string), chatId (string), status (string), chat (string), chatReply (string), createdAt (number), expiresAt (number)
+# Chats Table Fields in DynamoDB: userId (string), chatId (string), status (string), chat (string), chatReply (string), createdAt (number), expiresAt (number), sessionId (string), proposedPayment (number)
 
 # Improvements that should be made before this could be used as a production service:
 # - Comprehensive security review of all components

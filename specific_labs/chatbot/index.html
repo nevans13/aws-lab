@@ -249,32 +249,33 @@
             async function submitPayment(paymentAmountFloat) {
                 const idToken = sessionStorage.getItem("idToken");
 
-                if (typeof(paymentAmountFloat) !== "number") {throw new Error ("Payment amount is not a number")}
+                if (typeof(paymentAmountFloat) !== "number") {throw new Error("Payment amount is not a number");}
 
+                let response;
                 try {
-                    const response = await fetch ("/api/v1/payment", {
+                    response = await fetch("/api/v1/payment", {
                         method: "POST",
                         headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": "Bearer " + idToken
+                            "Content-Type": "application/json",
+                            "Authorization": "Bearer " + idToken
                         },
                         body: JSON.stringify({
                             payment_amount: paymentAmountFloat
                         })
-                        }
-                    );
-
-                    if (response.status === 201) {
-                        // If request was successful, return without an error
-                        return
-                    } else {
-                        // If request was unsuccessful, response body will be the error ("message")
-                        const data = await response.json();
-                        throw new Error(data.message || "Payment failed");
-                    }
+                    });
                 } catch {
-                    throw new Error ("Error with payment")
+                    throw new Error("Could not reach the server to make the payment");
                 }
+
+                // A 201 means the payment was recorded
+                if (response.status === 201) return;
+
+                // Otherwise keep the server's error message when there is one
+                let message = "Payment failed";
+                try {
+                    message = (await response.json()).message || message;
+                } catch {}
+                throw new Error(message);
             }
 
             // Send a message to the chatbot
@@ -330,12 +331,61 @@
                     await sleep(intervalMs);
 
                     const result = await getReply(chatId);
-                    if (result.status === "completed") return result.chatReply;
+                    if (result.status === "completed") return { chatReply: result.chatReply, proposedPayment: result.proposedPayment };
                     if (result.status === "failed") throw new Error("The assistant could not answer that message.");
                 }
 
                 // Throw an error if the timeout is hit
                 throw new Error("The assistant is taking longer than expected, please try again.");
+            }
+
+            // Show Confirm and Cancel buttons for a payment the chatbot prepared
+            // No money moves unless the customer presses Confirm, which uses the same authenticated payment API as the payment form
+            function addPaymentProposal(amount) {
+                const formattedAmount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+
+                const proposal = document.createElement("p");
+                proposal.setAttribute("class", "ai_message");
+                proposal.innerText = "Payment ready: " + formattedAmount + " ";
+                document.getElementById("chatbot_thread").appendChild(proposal);
+
+                const confirmButton = document.createElement("button");
+                confirmButton.innerText = "Confirm";
+                const cancelButton = document.createElement("button");
+                cancelButton.innerText = "Cancel";
+                proposal.append(confirmButton, cancelButton);
+
+                cancelButton.addEventListener("click", () => {
+                    confirmButton.disabled = true;
+                    cancelButton.disabled = true;
+
+                    const cancelMessage = document.createElement("p");
+                    cancelMessage.setAttribute("class", "ai_message");
+                    cancelMessage.innerText = "Payment cancelled.";
+                    document.getElementById("chatbot_thread").appendChild(cancelMessage);
+                });
+
+                confirmButton.addEventListener("click", async () => {
+                    // Disable both buttons immediately so this payment can only be submitted once
+                    confirmButton.disabled = true;
+                    cancelButton.disabled = true;
+                    try {
+                        await submitPayment(amount);
+                        await loadBalance();
+
+                        const successMessage = document.createElement("p");
+                        successMessage.setAttribute("class", "ai_message");
+                        successMessage.innerText = "Your payment of " + formattedAmount + " was submitted.";
+                        document.getElementById("chatbot_thread").appendChild(successMessage);
+                    } catch (err) {
+                        console.error("Payment failed:", err);
+                        
+                        const errorMessage = document.createElement("p");
+                        errorMessage.setAttribute("class", "error_message");
+                        errorMessage.innerText = err.message;
+                        document.getElementById("chatbot_thread").appendChild(errorMessage);
+                    }
+                });
             }
 
             // Submit login
@@ -408,7 +458,7 @@
             document.getElementById("send_message").addEventListener("click", async () => {
                 // Empty the input field and add message to conversation
                 const messageText = document.getElementById("user_message_draft").value.toString().trim();
-                if (messageText.length < 1) {throw new Error("Message has no content");}
+                if (messageText.length < 1) {return}
                 document.getElementById("user_message_draft").value = "";
                 let messageElement = document.createElement("p");
                 messageElement.setAttribute("class", "user_message");
@@ -449,12 +499,14 @@
                     replyElement.innerText = "Thinking...";
                     document.getElementById("chatbot_thread").appendChild(replyElement);
 
-                    // Get the message reply
-                    const chatReply = await waitForReply(chatId);
-                    if (chatReply === null) return; // logged out; the UI was already reset
-                    
+                    // Get the message reply and possibly a proposed payment
+                    const { chatReply, proposedPayment } = await waitForReply(chatId);
+
                     // Replace the placeholder message with the actual reply
                     replyElement.innerText = chatReply;
+
+                    // If the assistant prepared a payment, show the Confirm / Cancel prompt
+                    if (proposedPayment) addPaymentProposal(proposedPayment.amount);
                 } catch (err) {
                     console.error("Chat failed:", err);
 

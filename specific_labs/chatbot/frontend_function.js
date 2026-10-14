@@ -52,7 +52,7 @@ exports.handler = async (event) => {
       return json(200, { balance: result.Item.balance });
     }
 
-        // Submit a payment toward the account balance
+    // Submit a payment toward the account balance
     case "POST /api/v1/payment": {
       // API Gateway already validated the JWT; the user ID is the verified sub claim
       const userId = event.requestContext?.authorizer?.jwt?.claims?.sub;
@@ -206,13 +206,19 @@ exports.handler = async (event) => {
         const result = await db.send(new GetCommand({
           TableName: process.env.CHATS_TABLE,
           Key: { chatId, userId },
-          ProjectionExpression: "#status, chatReply",
+          ProjectionExpression: "#status, chatReply, proposedPayment",
           ExpressionAttributeNames: { "#status": "status" } // "status" is a DynamoDB reserved word, so we use an alias substitution
         }));
 
         // A chat that does not exist and a chat that belongs to someone else both return 404
         if (!result.Item) return json(404, { message: "Chat not found" });
-        return json(200, { status: result.Item.status, chatReply: result.Item.chatReply });
+        
+        // Only expose a proposal when the chat finished successfully, so a stale proposal from a failed chat is never shown
+        return json(200, {
+          status: result.Item.status,
+          chatReply: result.Item.chatReply,
+          proposedPayment: result.Item.status === "completed" ? result.Item.proposedPayment : undefined
+        });
       } catch (err) {
         console.error("Chat read failed:", err);
         return json(500, { message: "Internal server error" });

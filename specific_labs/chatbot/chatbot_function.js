@@ -13,7 +13,11 @@ const SYSTEM_PROMPT =
   "You are a customer service assistant for a loan servicing company. " +
   "You answer general questions about loans and payments in a polite, concise way. " +
   "Use the get_account_balance tool when the customer asks about their balance. " +
+  "Use the get_payments tool when the customer asks about their past payments. " +
+  "You cannot make payments yourself. Use the propose_payment tool to prepare a payment, then tell the customer to press the Confirm button. " +
+  "Never say a payment has been made, because only the customer's confirmation completes it. To check whether a payment went through, use the get_payments tool. " +
   "You must not guess at any customer account data that you do not have access to. " +
+  "You are unable to provide any information about any customer other than the one in the conversation, and you must not answer questions about any other customers. " +
   "If a request is outside loan servicing, politely decline and offer to help with a loan-related question. " + 
   "Please do not provide any recommendations to the customer on any topics. " +
   "Respond in plain text only. Do not use Markdown formatting such as asterisks, pound signs, backticks, or tables. " +
@@ -31,6 +35,24 @@ const TOOL_CONFIG = {
         description: "Get the current outstanding loan balance of the customer in this conversation. It takes no input and always returns the balance for the customer who is chatting.",
         inputSchema: { json: { type: "object", properties: {}, required: [] } }
       }
+    },
+    {
+      toolSpec: {
+        name: "get_payments",
+        description: "List the payment history for the customer in this conversation. This tool takes no input and will return the most recent payments the customer has made towards their loan balance.",
+        inputSchema: { json: { type: "object", properties: {}, required: [] } }
+      }
+    },
+    {
+      toolSpec: {
+        name: "propose_payment",
+        description: "Prepare a payment toward the customer's loan balance for the customer to confirm. This does NOT make the payment; the customer must press a Confirm button in the chat. Requires the amount in US dollars.",
+        inputSchema: { json: {
+          type: "object",
+          properties: { amount: { type: "number", description: "Payment amount in US dollars, with at most two decimal places." } },
+          required: ["amount"]
+        } }
+      }
     }
   ]
 };
@@ -45,7 +67,45 @@ const TOOLS = {
     }));
     if (!result.Item) return { error: "No account was found for this customer." };
     return { outstandingBalance: result.Item.balance };
-  }
+  },
+
+  get_payments: async (userId) => {
+    const result = await db.send(new GetCommand({
+      TableName: process.env.ACCOUNTS_TABLE,
+      Key: { userId },
+      ProjectionExpression: "payments"
+    }));
+    if (!result.Item) return { error: "No account was found for this customer." };
+
+    // Newest first, limited so a long history cannot flood the model's context
+    const all = result.Item.payments ?? [];
+    const recent = all.slice(-20).reverse().map((payment) => ({
+      amount: payment.amount,
+      date: new Date(payment.createdAt * 1000).toISOString().slice(0, 10) // YYYY-MM-DD
+    }));
+    return { totalPayments: all.length, recentPayments: recent };
+  },
+
+  // With this tool, the model prepares a payment that the customer can make
+  // The proposed payment is stored in the Chats DynamoDB table, and the client checks for a proposed payment every time a chatbot reply is received
+  // This ensures that the AI model remains read-only against customer information, never actually writing to the Accounts DynamoDB table
+  propose_payment: async (userId, input, { chatId }) => {
+    const amount = input?.amount;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0 || Math.abs(amount * 100 - Math.round(amount * 100)) > 1e-6) {
+      return { error: "The amount must be a positive dollar amount with at most two decimal places." };
+    }
+
+    // Record the proposal on this chat item so the app can show a Confirm button; no money moves here
+    await db.send(new UpdateCommand({
+      TableName: process.env.CHATS_TABLE,
+      Key: { chatId, userId },
+      UpdateExpression: "SET proposedPayment = :proposal",
+      ConditionExpression: "#status = :processing",
+      ExpressionAttributeNames: { "#status": "status" },
+      ExpressionAttributeValues: { ":proposal": { amount: Math.round(amount * 100) / 100 }, ":processing": "processing" }
+    }));
+    return { status: "awaiting_customer_confirmation", message: "No payment has been made. Tell the customer the payment is ready and they must press the Confirm button to complete it." };
+  },
 };
 
 // Record the final outcome of a chat; only succeeds while the chat is still being processed
@@ -148,7 +208,7 @@ exports.handler = async (event) => {
           status = "error";
         } else {
           try {
-            result = await tool(userId);
+            result = await tool(userId, block.toolUse.input ?? {}, { chatId });
           } catch (err) {
             console.error("Tool failed:", name, err);
             result = { error: "The tool failed." };
