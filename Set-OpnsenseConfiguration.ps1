@@ -1,0 +1,201 @@
+# This script demonstrates various commands that can be run directly against the OPNsense REST API for diagnostics or setting configuration
+# v1.0.0 - 10/15/2026
+# Nathan Evans
+
+# Set environment variables for this session
+$env:FW_HOST = "<YOUR_HOST>"
+$env:FW_USER = "<API_KEY>"
+$env:FW_PASS = "<API_SECRET>"
+
+# Build Basic Auth header
+$basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($env:FW_USER):$($env:FW_PASS)"))
+$headers = @{ Authorization = "Basic $basic" }
+
+# The "-SkipCertificateCheck" flag is PS 7+, so in PS 5.1 default to trusting all certificates for the session
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
+}
+"@
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+}
+
+function Invoke-FwApi {
+    <#
+    .SYNOPSIS
+        Calls the firewall API with GET or POST.
+    .PARAMETER Method
+        Get or Post (default Post).
+    .PARAMETER Body
+        Hashtable sent as a JSON body (POST only).
+    .PARAMETER Query
+        Hashtable appended as a URL query string (typically for GET).
+    .PARAMETER PassThru
+        Return the response object to the caller instead of printing it.
+    .EXAMPLE
+        Invoke-FwApi -Path "/api/core/firmware/status" -Method Get -PassThru
+    .EXAMPLE
+        Invoke-FwApi -Path "/api/firewall/alias/search_item" -Method Get -Query @{ searchPhrase = "net_" } -PassThru
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [ValidateSet("Get", "Post")][string]$Method = "Post",
+        [hashtable]$Body,
+        [hashtable]$Query,
+        [switch]$PassThru
+    )
+
+    if ($Method -eq "Get" -and $Body) {
+        throw "Invoke-FwApi: -Body is not valid with GET. Use -Query for URL parameters."
+    }
+
+    $uri = "https://$($env:FW_HOST)$Path"
+    if ($Query -and $Query.Count -gt 0) {
+        $qs = ($Query.GetEnumerator() | ForEach-Object {
+            "$([uri]::EscapeDataString([string]$_.Key))=$([uri]::EscapeDataString([string]$_.Value))"
+        }) -join "&"
+        $uri = "${uri}?${qs}"
+    }
+
+    # Set parameters and use the SkipCertificateCheck in PS 7+
+    $params = @{
+        Uri     = $uri
+        Method  = $Method
+        Headers = $headers
+    }
+    if ($PSVersionTable.PSVersion.Major -ge 6) { $params.SkipCertificateCheck = $true }
+
+    if ($Method -eq "Post") {
+        if ($Body) {
+            $params.ContentType = "application/json"
+            $params.Body        = $Body | ConvertTo-Json -Depth 10 -Compress
+        }
+        else {
+            $params.Body = ""
+        }
+    }
+
+    $label = $Method.ToUpper()
+    try {
+        $result = Invoke-RestMethod @params
+        if ($PassThru) { return $result }
+        Write-Host "[OK]   $label $Path" -ForegroundColor Green
+        $result | ConvertTo-Json -Depth 10 -Compress | Write-Host
+    }
+    catch {
+        Write-Host "[FAIL] $label $Path : $($_.Exception.Message)" -ForegroundColor Red
+        if ($PassThru) { return $null }
+    }
+}
+
+# --- Add Default route ------------------------------------------------------
+Invoke-FwApi -Path "/api/routes/routes/addroute" -Body @{
+    route = @{
+        enabled = "1"
+        network = "0.0.0.0/0"
+        gateway = "WAN_DHCP"
+        descr   = "Default route"
+    }
+}
+Invoke-FwApi -Path "/api/routes/routes/reconfigure"
+
+# --- Add Firewall aliases, then reconfigure ---------------------------------
+$aliases = @(
+    @{ name = "aws_lab_linux_a_use2"; type = "host"; content = "10.0.6.203"; description = "aws-lab-linux-a Server - testing VM in us-east-2" }
+    @{ name = "opnsense_instance_a_wan"; type = "host"; content = "10.0.4.4"; description = "OPNsenseInstanceA WAN interface" }
+    @{ name = "rfc_1918"; type = "network"; content = "10.0.0.0/8`n172.16.0.0/12`n192.168.0.0/16"; description = "RFC 1918 private addresses" }
+)
+
+foreach ($alias in $aliases) {
+    $alias.enabled = "1"
+    Invoke-FwApi -Path "/api/firewall/alias/add_item" -Body @{ alias = $alias }
+}
+Invoke-FwApi -Path "/api/firewall/alias/reconfigure"
+
+# --- Source NAT -------------------------------------------------------------
+Invoke-FwApi -Path "/api/firewall/source_nat/set" -Body @{
+    filter = @{ general = @{ snat_mode = "advanced" } }
+}
+Invoke-FwApi -Path "/api/firewall/source_nat/add_rule" -Body @{
+    rule = @{
+        enabled         = "1"
+        description     = "SNAT outbound PAT for LAN network"
+        interface       = "opt1"
+        source_net      = "net_aws_aws_use2_fw01_lan"
+        destination_not = "1"
+        destination_net = "rfc_1918"
+        target          = "opnsense_instance_a_wan"
+        log             = "1"
+    }
+}
+Invoke-FwApi -Path "/api/firewall/source_nat/apply"
+
+# --- Firewall rules ---------------------------------------------------------
+Invoke-FwApi -Path "/api/firewall/filter/add_rule" -Body @{
+    rule = [ordered]@{
+        "enabled"              = "1"
+        "sequence"             = "100"
+        "categories"           = ""
+        "nosync"               = "0"
+        "description"          = "Allow aws-lab-linux-a outbound to the internet"
+        "interfacenot"         = "0"
+        "interface"            = ""
+        "received-on-not"      = "0"
+        "received-on"          = "opt1"
+        "quick"                = "1"
+        "action"               = "pass"
+        "allowopts"            = "0"
+        "direction"            = "out"
+        "ipprotocol"           = "inet"
+        "protocol"             = "any"
+        "icmptype"             = ""
+        "icmp6type"            = ""
+        "source_not"           = "0"
+        "source_net"           = "aws_lab_linux_a_use2"
+        "source_port"          = ""
+        "destination_not"      = "1"
+        "destination_net"      = "rfc_1918"
+        "destination_port"     = ""
+        "log"                  = "1"
+        "tcpflags1"            = ""
+        "tcpflags2"            = ""
+        "tcpflags_any"         = "0"
+        "sched"                = ""
+        "divert-to"            = ""
+        "statetype"            = "keep"
+        "state-policy"         = ""
+        "nopfsync"             = "0"
+        "statetimeout"         = ""
+        "udp-first"            = ""
+        "udp-single"           = ""
+        "udp-multiple"         = ""
+        "adaptivestart"        = ""
+        "adaptiveend"          = ""
+        "max"                  = ""
+        "max-src-nodes"        = ""
+        "max-src-states"       = ""
+        "max-src-conn"         = ""
+        "max-src-conn-rate"    = ""
+        "max-src-conn-rates"   = ""
+        "overload"             = ""
+        "max-pkt-rate-number"  = ""
+        "max-pkt-rate-seconds" = ""
+        "shaper1"              = ""
+        "shaper2"              = ""
+        "gateway"              = ""
+        "disablereplyto"       = "0"
+        "replyto"              = ""
+        "prio"                 = ""
+        "set-prio"             = ""
+        "set-prio-low"         = ""
+        "tos"                  = ""
+        "tag"                  = ""
+        "tagged"               = ""
+        "audit"                = @{ userdata = @{ note = "" } }
+    }
+}
+Invoke-FwApi -Path "/api/firewall/filter/apply"
