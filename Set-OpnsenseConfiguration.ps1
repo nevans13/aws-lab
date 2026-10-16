@@ -1,6 +1,6 @@
 # This script demonstrates various commands that can be run directly against the OPNsense REST API for diagnostics or setting configuration
 # v1.0.0 - 10/15/2026
-# Nathan Evans
+# nevans13
 
 # Set environment variable secrets for this session
 $env:FW_HOST = "<YOUR_HOST>"
