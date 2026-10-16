@@ -449,13 +449,22 @@
                 }
             });
 
-            // Open chatbot
+            // Open or close the chatbot
             document.getElementById("chatbot").addEventListener("click", async () => {
-                // Change chatbot color to indicate it is opened
-                document.getElementById("chatbot").setAttribute("style", "background-color: slateblue;");
+                // Show the chatbot area if it is hidden
+                if (document.getElementById("chatbot_area").hasAttribute("hidden")) {
+                    // Change chatbot color to indicate it is opened
+                    document.getElementById("chatbot").setAttribute("style", "background-color: slateblue;");
 
-                // Show the chatbot area with the conversation thread and related options
-                document.getElementById("chatbot_area").removeAttribute("hidden");
+                    // Show the chatbot area with the conversation thread and related options
+                    document.getElementById("chatbot_area").removeAttribute("hidden");
+                }
+
+                // Hide the chatbot area without clearing any session information
+                else {
+                    document.getElementById("chatbot_area").setAttribute("hidden", "");
+                    document.getElementById("chatbot").setAttribute("style", "background-color: darkslateblue;");
+                }
             });
 
             // Add "Send Message" button listener
