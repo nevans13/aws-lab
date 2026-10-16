@@ -200,6 +200,13 @@ Resources:
       RouteKey: GET /api/v1/reply
       Target: !Sub integrations/${APIGatewayIntegration}
 
+  # CloudWatch log group for the frontend Lambda function
+  FrontendLambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/aws-lab-chatbot-frontend
+      RetentionInDays: 14
+
   # Execution role for the frontend Lambda function
   FrontendLambdaFunctionRole:
     Type: AWS::IAM::Role
@@ -256,6 +263,11 @@ Resources:
       Role: !GetAtt FrontendLambdaFunctionRole.Arn
       Timeout: 5
       MemorySize: 128
+      LoggingConfig:
+          ApplicationLogLevel: INFO
+          LogFormat: JSON
+          LogGroup: !Ref FrontendLambdaFunctionLogGroup
+          SystemLogLevel: INFO
       Code:
         ZipFile: |
           exports.handler = async () => ({
@@ -263,6 +275,9 @@ Resources:
             headers: { "Content-Type": "text/html" },
             body: "<html><body>PLEASE UPDATE CODE</body></html>"
           });
+    DependsOn:
+      - FrontendLambdaFunctionLogGroup
+      - FrontendLambdaFunctionRole
 
   # The AWS::Lambda::Permission resource grants an AWS service or another account permission to use a function
   FrontendInvokePermission:
@@ -272,6 +287,13 @@ Resources:
       FunctionName: !Ref FrontendLambdaFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*
+
+  # CloudWatch log group for the chatbot Lambda function
+  ChatbotLambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/aws-lab-chatbot-chatbot
+      RetentionInDays: 14
 
   # Execution role for the chatbot Lambda function - defines what AWS resources the chatbot Lambda can access (DynamoDB, Bedrock)
   # Who can invoke the chatbot Lambda is controlled separately, by the invoke-chatbot policy on the frontend Lambda's execution role
@@ -342,6 +364,11 @@ Resources:
       Role: !GetAtt ChatbotLambdaFunctionRole.Arn
       Timeout: 120
       MemorySize: 128
+      LoggingConfig:
+          ApplicationLogLevel: INFO
+          LogFormat: JSON
+          LogGroup: !Ref ChatbotLambdaFunctionLogGroup
+          SystemLogLevel: INFO
       Code:
         ZipFile: |
           exports.handler = async () => ({
@@ -349,6 +376,9 @@ Resources:
             headers: { "Content-Type": "text/html" },
             body: "<html><body>PLEASE UPDATE CODE</body></html>"
           });
+    DependsOn:
+      - ChatbotLambdaFunctionLogGroup
+      - ChatbotLambdaFunctionRole
 
   # Disable automatic retries
   ChatbotLambdaFunctionInvokeConfig:
