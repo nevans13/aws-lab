@@ -1,12 +1,18 @@
 # aws-lab
-CloudFormation templates and related code for AWS lab environment\
+CloudFormation templates and related code for AWS lab environments\
 **Note:** all code is meant for testing in a lab environment and should not be used as a security or production-ready reference
 
 ## Overview
-This repository contains code for various lab systems in AWS. Primary networking is provided by OPNsense.
+This repository contains code for various lab systems in AWS. Each CloudFormation YAML file in the root directory is a separate lab that can be deployed independently of the others.
 
-## Installation
-### Prerequisites
+## Specific Labs
+This repository contains small, topic-based labs that can be deployed individually. Lab-specific instructions are found below.
+- *opnsense:* creates OPNsense firewalls running on EC2
+- *ipv6:* creates IPv6-native resources in AWS
+- *chatbot:* creates the infrastructure for a simple AI chatbot
+
+### opnsense
+#### Prerequisites
 1 - Create an EC2 keypair (default name "aws-lab-keypair", or based on instance-specific commands below, can be "aws-lab-keypair-us-east-2")\
 2 - Subscribe to the OPNsense AMI in AWS Marketplace and determine the AMI ID for the specific region\
 3 - Deploy Cloudformation template in any desired region(s); the following works from CloudShell:
@@ -28,25 +34,20 @@ This repository contains code for various lab systems in AWS. Primary networking
 
     sudo /usr/local/sbin/opnsense-shell
 
-## Cleanup
+#### Cleanup
 The system is meant to be easily decommissioned using:
 
     aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab
     aws cloudformation delete-stack --region us-west-1 --stack-name aws-lab
     rm -rf aws-lab
 
-## CloudFormation Conditions
+#### CloudFormation Conditions
 The cloudformation.yaml conditions are structured that they can be enabled modularly, and billable resources are only created if one or more conditions are enabled
 - *CreateOpnsenseInstances:* create the OPNsense firewalls and associated VPC/EC2 resources
 
-## Recommended OPNsense Initial Configuration Steps
+#### Recommended OPNsense Initial Configuration Steps
 1 - Complete system update (System > Firmware > Status: Check for Updates)\
 2 - Add default route (0.0.0.0/0) out of WAN interface (System > Routes > Configuration > Add)\
 3 - Assign LAN interface (Interfaces > Assignments), then enable/configure it (Interfaces > LAN)\
 4 - Add static DNAT rules (Firewall > NAT > Destination)\
 5 - Generate an API key (System > Access > Users)
-
-## Specific Labs
-This repository also contains small, topic-based labs that can be deployed individually.
-- *ipv6:* creates IPv6-native resources in AWS
-- *chatbot:* creates the infrastructure for a simple AI chatbot

@@ -11,30 +11,30 @@ export LC_ALL=C
 
 # Create the stack and wait for completion
 echo Creating CloudFormation stack...
-aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --capabilities CAPABILITY_IAM --template-body file://aws-lab/specific_labs/chatbot.yaml --output off
+aws cloudformation create-stack --region us-east-2 --stack-name aws-lab-chatbot --capabilities CAPABILITY_IAM --template-body file://aws-lab/chatbot.yaml --output off
 aws cloudformation wait stack-create-complete --stack-name aws-lab-chatbot --region us-east-2
 
 # Insert the Cognito User Pool App Client ID created in AWS into the frontend HTML
 echo Inserting Cognito User Pool App Client ID into frontend HTML...
 COGNITO_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name aws-lab-chatbot --region us-east-2 --query "Stacks[0].Outputs[?OutputKey=='CognitoClientId'].OutputValue" --output text)
-sed -i "s/YOUR_APP_CLIENT_ID/$COGNITO_CLIENT_ID/" aws-lab/specific_labs/chatbot/index.html
+sed -i "s/YOUR_APP_CLIENT_ID/$COGNITO_CLIENT_ID/" aws-lab/chatbot/index.html
 
 # Bundle frontend Lambda files at the zip root (with "-j")
 echo Bundling frontend Lambda code...
-zip -j aws-lab/specific_labs/frontend.zip aws-lab/specific_labs/chatbot/frontend_function.js aws-lab/specific_labs/chatbot/index.html > /dev/null
+zip -j aws-lab/frontend.zip aws-lab/chatbot/frontend_function.js aws-lab/chatbot/index.html > /dev/null
 
 # Upload the frontend code bundle and wait until the function redeploys
 echo Uploading frontend Lambda code...
-aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot-frontend --zip-file fileb://aws-lab/specific_labs/frontend.zip --output off
+aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot-frontend --zip-file fileb://aws-lab/frontend.zip --output off
 aws lambda wait function-updated --region us-east-2 --function-name aws-lab-chatbot-frontend
 
 # Bundle chatbot Lambda files at the zip root (with "-j")
 echo Bundling chatbot Lambda code...
-zip -j aws-lab/specific_labs/chatbot.zip aws-lab/specific_labs/chatbot/chatbot_function.js > /dev/null
+zip -j aws-lab/chatbot.zip aws-lab/chatbot/chatbot_function.js > /dev/null
 
 # Upload the chatbot code bundle and wait until the function redeploys
 echo Uploading chatbot Lambda code...
-aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot-chatbot --zip-file fileb://aws-lab/specific_labs/chatbot.zip --output off
+aws lambda update-function-code --region us-east-2 --function-name aws-lab-chatbot-chatbot --zip-file fileb://aws-lab/chatbot.zip --output off
 aws lambda wait function-updated --region us-east-2 --function-name aws-lab-chatbot-chatbot
 
 # Create a test user in Amazon Cognito

@@ -1,0 +1,477 @@
+################
+### Overview ###
+################
+
+# This Cloudformation template creates the infrastructure for a simple AI chatbot.
+# This application simulates a loan customer of a finance company interacting with their account. The customer can interact either using a traditional webpage or via the chatbot.
+# This lab entry primarily focuses on the AI aspects of the chatbot, such as Amazon Bedrock, not the frontend code.
+# If deploying in a region other than us-east-2, review code for any instances specifically referencing that region.
+
+# Components:
+# Customer Browser - runs frontend code for both the customer account page and chatbot; the frontend is a single-page web app in one file: index.html
+# Amazon Cognito - handles user authentication and JWTs; the client calls Cognito directly for authentication
+# API Gateway - the primary communication point for the client; one API Gateway handles all user interaction except authentication (handled by Cognito)
+# Lambda - coordinates communication among AWS services; two Lambda functions are used - one to serve frontend code (HTML/CSS/JS) and one to process chatbot functions (communicates with Bedrock)
+# Bedrock - hosts the AI models used with custom guardrails. This application uses the Converse API from the Bedrock Runtime, which is a stateless AI service (no context is maintained by the model between calls).
+# DynamoDB - persistent storage layer for user information and AI chat messages; DynamoDB does not require a defined schema
+# CloudWatch - monitoring and logging
+
+# User Fields in Cognito: first_name, last_name, email, username, password
+# DynamoDB Tables: aws-lab-chatbot-accounts, aws-lab-chatbot-chats
+# Accounts Table Fields in DynamoDB: userId (string), balance (number), payments (list)
+# Chats Table Fields in DynamoDB: userId (string), chatId (string), status (string), chat (string), chatReply (string), createdAt (number), expiresAt (number), sessionId (string), proposedPayment (number)
+
+# Improvements that should be made before this could be used as a production service:
+# - Comprehensive security review of all components
+# - Review for cost reduction (ie minimizing Lambda runtimes, reducing API calls)
+
+
+
+#############
+### Usage ###
+#############
+
+# Creation:
+# git clone https://github.com/nevans13/aws-lab
+# bash aws-lab/chatbot/setup.sh
+
+# Cleanup:
+# aws cloudformation delete-stack --region us-east-2 --stack-name aws-lab-chatbot
+# rm -rf aws-lab
+
+
+
+#####################
+### Template Body ###
+#####################
+
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: CloudFormation template for creating infrastructure for a simple AI chatbot
+
+Resources:
+  # Amazon Cognito User Pool
+  # Without the EmailConfiguration, SignInPolicy, and WebAuthnFactorConfiguration configuration, the user pool defaults to password authentication only
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true # only an administrator can create user accounts
+      DeletionProtection: INACTIVE # if set to ACTIVE, must be deactivated before the user pool can be deleted
+      MfaConfiguration: "OFF" # no MFA
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          PasswordHistorySize: 22
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+      UsernameConfiguration:
+        CaseSensitive: false # usernames are not case sensitive
+      UserPoolAddOns:
+        AdvancedSecurityMode: "OFF" # disable activation of advanced threat protection features
+      UserPoolName: aws-lab-chatbot
+      UserPoolTier: ESSENTIALS # feature plan
+
+  # The User Pool App Client represents the web application's interaction with the Cognito user pool
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AccessTokenValidity: 60
+      ClientName: aws-lab-chatbot-frontend
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH # targeted by the browser's InitiateAuth call in the client JS
+        - ALLOW_REFRESH_TOKEN_AUTH # authentication flow for token refreshes
+      GenerateSecret: false # browser clients are not meant to keep a secret
+      IdTokenValidity: 60
+      PreventUserExistenceErrors: ENABLED # if user doesn't exist, Cognito responds with an invalid username/password error rather than a user does not exist error
+      RefreshTokenValidity: 1
+      TokenValidityUnits: # the units of time that AccessTokenValidity, IdTokenValidity, and RefreshTokenValidity enforce
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      UserPoolId: !Ref CognitoUserPool
+
+  # This API Gateway handles all API functions for this application
+  # API Gateway v2 is used for JWT support and improved performance
+  APIGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Description: This API Gateway handles all API functions for this application
+      IpAddressType: ipv4 # only IPv4 addresses can invoke the API
+      Name: aws-lab-chatbot
+      ProtocolType: HTTP # use an HTTP API (versus websocket)
+      Version: v1 # optional version identifier
+
+  # The Authorizer checks authorization for specific routes; configured here to authorize based on JSON web tokens
+  # On routes that use this Authorizer, API Gateway checks the validity of the JWT, including that the issuer matches the one configured here
+  Authorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref APIGateway
+      Name: aws-lab-chatbot-cognito-jwt
+      AuthorizerType: JWT
+      IdentitySource:
+        - $request.header.Authorization
+      JwtConfiguration:
+        Audience:
+          - !Ref CognitoUserPoolClient
+        Issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}
+
+  # The integration between the API Gateway and the Lambda function
+  APIGatewayIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref APIGateway
+      IntegrationType: AWS_PROXY # this is a Lambda proxy integration between API Gateway and another AWS service
+      IntegrationUri: !GetAtt FrontendLambdaFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  # Stage (deploy) the API; each stage is a named deployment of the API (prod, dev, etc)
+  APIGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    DependsOn:
+      - PostChatRoute
+      - GetReplyRoute
+    Properties:
+      ApiId: !Ref APIGateway
+      StageName: $default # the $default stage is served from the base of the API's URL
+      AutoDeploy: true # API updates to not require an explicit redeployment of the API
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: false
+        ThrottlingBurstLimit: 20 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
+        ThrottlingRateLimit: 10 # these are global rate-limits, not applied per-user; so while low for this lab, should be increased in production
+      RouteSettings: # per-route settings that override the DefaultRouteSettings
+        "POST /api/v1/chat": # each chat message triggers a Bedrock call, so this stays low
+          ThrottlingRateLimit: 1
+          ThrottlingBurstLimit: 3
+        "GET /api/v1/reply": # polled every ~2 seconds by each active chat, so this needs headroom
+          ThrottlingRateLimit: 20
+          ThrottlingBurstLimit: 40
+
+  # This is the start of all the API routes on the API Gateway
+  # Primary client frontend route (returns the index.html code); does not require a JWT because the user is unauthenticated when requesting the frontend code
+  FrontendRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      RouteKey: GET / # return index HTML code only for the root path
+      Target: !Sub integrations/${APIGatewayIntegration} # the route target
+
+  # Authenticated route to get account balance
+  AccountBalanceRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      AuthorizerId: !Ref Authorizer
+      AuthorizationType: JWT
+      RouteKey: GET /api/v1/balance
+      Target: !Sub integrations/${APIGatewayIntegration}
+
+  # Authenticated route to submit a payment to the frontend Lambda
+  PostPaymentRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      AuthorizerId: !Ref Authorizer
+      AuthorizationType: JWT
+      RouteKey: POST /api/v1/payment
+      Target: !Sub integrations/${APIGatewayIntegration}
+  
+  # Authenticated route to submit a new chat message to the frontend Lambda
+  PostChatRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      AuthorizerId: !Ref Authorizer
+      AuthorizationType: JWT
+      RouteKey: POST /api/v1/chat
+      Target: !Sub integrations/${APIGatewayIntegration}
+  
+  # Authenticated route to get the chat reply, with the chat ID as a query parameter read by the frontend Lambda
+  GetReplyRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref APIGateway
+      AuthorizerId: !Ref Authorizer
+      AuthorizationType: JWT
+      RouteKey: GET /api/v1/reply
+      Target: !Sub integrations/${APIGatewayIntegration}
+
+  # CloudWatch log group for the frontend Lambda function
+  FrontendLambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/aws-lab-chatbot-frontend
+      RetentionInDays: 14
+
+  # Execution role for the frontend Lambda function
+  FrontendLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: # the Trust Policy that defines which entities can assume this role
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole # Security Token Service
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
+      Policies:
+        - PolicyName: update-accounts # this policy allows the frontend Lambda function to read and update customer account information
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt AccountsTable.Arn
+        - PolicyName: create-and-read-chats # this policy allows the frontend Lambda function to post to the chats table in DynamoDB and read replies
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt ChatsTable.Arn
+        - PolicyName: invoke-chatbot # this policy allows the frontend Lambda function to invoke the chatbot Lambda function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ChatbotLambdaFunction.Arn
+
+  # This Lambda function handles all frontend services for this application (webpage, API, receiving message requests)
+  FrontendLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          ACCOUNTS_TABLE: !Ref AccountsTable # set environment variable for the DynamoDB accounts table
+          CHATS_TABLE: !Ref ChatsTable # set environment variable for the DynamoDB chats table
+          CHATBOT_FUNCTION: !Ref ChatbotLambdaFunction # the name of the chatbot Lambda function for the frontend function to call
+      FunctionName: aws-lab-chatbot-frontend
+      Runtime: nodejs24.x
+      Handler: frontend_function.handler
+      Role: !GetAtt FrontendLambdaFunctionRole.Arn
+      Timeout: 5
+      MemorySize: 128
+      LoggingConfig:
+          ApplicationLogLevel: INFO
+          LogFormat: JSON
+          LogGroup: !Ref FrontendLambdaFunctionLogGroup
+          SystemLogLevel: INFO
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({
+            statusCode: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<html><body>PLEASE UPDATE CODE</body></html>"
+          });
+    DependsOn:
+      - FrontendLambdaFunctionLogGroup
+      - FrontendLambdaFunctionRole
+
+  # The AWS::Lambda::Permission resource grants an AWS service or another account permission to use a function
+  FrontendInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref FrontendLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/*
+
+  # CloudWatch log group for the chatbot Lambda function
+  ChatbotLambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/aws-lab-chatbot-chatbot
+      RetentionInDays: 14
+
+  # Execution role for the chatbot Lambda function - defines what AWS resources the chatbot Lambda can access (DynamoDB, Bedrock)
+  # Who can invoke the chatbot Lambda is controlled separately, by the invoke-chatbot policy on the frontend Lambda's execution role
+  ChatbotLambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: # the Trust Policy that defines which entities can assume this role
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole # Security Token Service
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole # this AWS managed policy provides write permissions to CloudWatch Logs
+      Policies:
+        - PolicyName: chats # this policy allows the chatbot Lambda function to read a chat, read the conversation history, and write the reply
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ChatsTable.Arn
+                  - !Sub ${ChatsTable.Arn}/index/SessionIndex # query on an index needs its own resource entry
+                Sid: AllowChatbotLambdaChatsTable
+        - PolicyName: bedrock # this policy allows the chatbot Lambda function to call Nova 2 Lite with the guardrail, and nothing else in Bedrock
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: bedrock:InvokeModel # also covers the Converse API
+                Resource:
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.amazon.nova-2-lite-v1:0
+                  - arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0 # the underlying model in whichever region serves the request
+                Sid: AllowChatbotLambdaInvokeModel
+              - Effect: Allow
+                Action: bedrock:ApplyGuardrail
+                Resource: !GetAtt BedrockGuardrail.GuardrailArn
+                Sid: AllowChatbotLambdaApplyGuardrail
+        - PolicyName: read-balance # this policy allows the chatbot Lambda function's balance tool to read the accounts table in DynamoDB
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !GetAtt AccountsTable.Arn
+                Sid: AllowChatbotLambdaReadAccounts
+
+  # This Lambda function handles communication with the Bedrock AI chatbot
+  # This Lambda stores chat messages in DynamoDB, interacts with Bedrock, and is called by the frontend Lambda
+  ChatbotLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          CHATS_TABLE: !Ref ChatsTable # set environment variable for the DynamoDB chats table
+          ACCOUNTS_TABLE: !Ref AccountsTable # the table the balance tool reads
+          MODEL_ID: us.amazon.nova-2-lite-v1:0 # Nova 2 Lite through its cross-region inference profile
+          GUARDRAIL_ID: !GetAtt BedrockGuardrail.GuardrailId
+          GUARDRAIL_VERSION: DRAFT # use a numbered version once the guardrail has real policies
+      FunctionName: aws-lab-chatbot-chatbot
+      Runtime: nodejs24.x
+      Handler: chatbot_function.handler
+      Role: !GetAtt ChatbotLambdaFunctionRole.Arn
+      Timeout: 120
+      MemorySize: 128
+      LoggingConfig:
+          ApplicationLogLevel: INFO
+          LogFormat: JSON
+          LogGroup: !Ref ChatbotLambdaFunctionLogGroup
+          SystemLogLevel: INFO
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({
+            statusCode: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<html><body>PLEASE UPDATE CODE</body></html>"
+          });
+    DependsOn:
+      - ChatbotLambdaFunctionLogGroup
+      - ChatbotLambdaFunctionRole
+
+  # Disable automatic retries
+  ChatbotLambdaFunctionInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref ChatbotLambdaFunction
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0 # avoid duplicate model calls; the function records failures itself
+
+  # DynamoDB table for each loan account
+  AccountsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aws-lab-chatbot-accounts
+      BillingMode: PAY_PER_REQUEST # no capacity planning needed for a lab-scale table
+      AttributeDefinitions: # the array of attributes that make up the primary key of the table, in this case just the user ID
+        - AttributeName: userId # the user ID is the value of sub (subject) from Cognito
+          AttributeType: S # type is String
+      DeletionProtectionEnabled: false # if set to true, must be disabled before the table can be deleted
+      KeySchema: # the array of attributes that make up the primary key of the table, in this case just the user ID
+        - AttributeName: userId
+          KeyType: HASH # user ID is used as a partition key
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      SSESpecification:
+        SSEEnabled: false # server-side encryption is always enabled at rest, but with AWS owned keys (rather than admin-controlled AWS managed KMS keys)
+
+  # DynamoDB table for chatbot chat messages
+  ChatsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aws-lab-chatbot-chats
+      BillingMode: PAY_PER_REQUEST # no capacity planning needed for a lab-scale table
+      AttributeDefinitions: # attributes used in the table key or in an index key
+        - AttributeName: chatId # the chat ID is a GUID set by the frontend Lambda
+          AttributeType: S # type is String
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: sessionId # identifies one login session, used to group a conversation
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: N # type is Number
+      GlobalSecondaryIndexes:
+        - IndexName: SessionIndex # lets the chatbot Lambda fetch one conversation in time order
+          KeySchema:
+            - AttributeName: sessionId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE # the table keys are always included; these are added
+            NonKeyAttributes:
+              - chat
+              - chatReply
+              - status
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      DeletionProtectionEnabled: false # if set to true, must be disabled before the table can be deleted
+      KeySchema: # the array of attributes that make up the primary key of the table, in this case the chat ID + user ID
+        - AttributeName: chatId
+          KeyType: HASH # chat ID is used as a partition key
+        - AttributeName: userId
+          KeyType: RANGE # user ID is the sort key
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      SSESpecification:
+        SSEEnabled: false # server-side encryption is always enabled at rest, but with AWS owned keys (rather than admin-controlled AWS managed KMS keys)
+
+  # Start of Bedrock resources
+  # Guardrails are safeguard policies
+  BedrockGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: aws-lab-chatbot
+      Description: Guardrail for the Converse chatbot
+      BlockedInputMessaging: Sorry, I can't help with that request.
+      BlockedOutputsMessaging: Sorry, I can't provide that response.
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: HATE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+
+Outputs:
+  FrontendUrl:
+    Description: Default execute-api URL for the frontend
+    Value: !Sub https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/
+
+  CognitoPoolId:
+    Description: The Cognito User Pool ID; used for creating a user with the AWS CLI
+    Value: !Ref CognitoUserPool
+
+  CognitoClientId:
+    Description: The Cognito User Pool App Client ID; paste into ClientId in index.html
+    Value: !Ref CognitoUserPoolClient
