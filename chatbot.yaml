@@ -467,8 +467,8 @@ Resources:
             OutputStrength: HIGH
       TopicPolicyConfig:
         TopicsConfig:
-          - Name: Investment Advice
-            Definition: Investment advice is inquiries, guidance, or recommendations about the management or allocation of funds or assets with the goal of generating returns or achieving specific financial objectives.
+          - Name: Medical Advice
+            Definition: Medical advice is the provision of a professional opinion, diagnosis, or treatment plan regarding a specific patient's health condition, typically delivered by a licensed healthcare provider.
             InputAction: BLOCK # specifies the action to take when harmful content is detected in the input
             OutputAction: BLOCK # specifies the action to take when harmful content is detected in the output
             Type: DENY
